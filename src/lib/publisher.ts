@@ -4,6 +4,7 @@ import { decryptJson, encryptJson } from "@/lib/crypto";
 import { describeError, getAdapter, isNetworkError } from "@/lib/platforms/adapters";
 import type { MediaFile } from "@/lib/platforms/adapters/shared";
 import { getPlatform, postProblems, threadTexts, type Platform } from "@/lib/platforms/catalog";
+import { nextOccurrence } from "@/lib/slots";
 import { tagLinks } from "@/lib/utm";
 import type { Post, PostStatus } from "@/lib/types";
 
@@ -65,7 +66,53 @@ export async function publishPost(supabase: SupabaseClient, post: Post): Promise
   const sent = targets.filter((t) => t.status === "sent").length;
   const status: PostStatus = targets.length === 0 || sent === 0 ? "failed" : sent === targets.length ? "done" : "partial";
   await supabase.from("posts").update({ status }).eq("id", post.id);
+  await scheduleNextOccurrence(supabase, post);
   return status;
+}
+
+/**
+ * For a repeating post, schedules the next one (same text, accounts, wording, thread
+ * and attachments). Runs once per post: the new post's id is recorded, so a retry
+ * doesn't create a second copy. Failures don't stop the series; alerts cover those.
+ */
+async function scheduleNextOccurrence(supabase: SupabaseClient, post: Post) {
+  if (!post.repeat) return;
+  const { data: current } = await supabase.from("posts").select("next_post_id").eq("id", post.id).single();
+  if (current?.next_post_id) return;
+  const { data: ws } = await supabase.from("workspaces").select("timezone").eq("id", post.workspace_id).single();
+
+  const { data: next, error } = await supabase
+    .from("posts")
+    .insert({
+      workspace_id: post.workspace_id,
+      body: post.body,
+      thread_parts: post.thread_parts ?? [],
+      repeat: post.repeat,
+      status: "scheduled",
+      scheduled_at: nextOccurrence(new Date(post.scheduled_at), post.repeat, ws?.timezone ?? "Europe/London").toISOString(),
+    })
+    .select("id")
+    .single();
+  if (error || !next) return console.error("couldn't schedule next occurrence", post.id, error);
+
+  const [{ data: targets }, { data: media }] = await Promise.all([
+    supabase.from("post_targets").select("account_id, body").eq("post_id", post.id),
+    supabase.from("post_media").select("path, mime, size, alt, position").eq("post_id", post.id),
+  ]);
+  // Link it only if nobody beat us to it; if another run did, drop this copy.
+  const { data: linked } = await supabase
+    .from("posts")
+    .update({ next_post_id: next.id })
+    .eq("id", post.id)
+    .is("next_post_id", null)
+    .select("id");
+  if (!linked?.length) {
+    await supabase.from("posts").delete().eq("id", next.id);
+    return;
+  }
+  await supabase.from("post_targets").insert((targets ?? []).map((t) => ({ ...t, post_id: next.id })));
+  // Attachments are shared with the original; files are only deleted once nothing refers to them.
+  if (media?.length) await supabase.from("post_media").insert(media.map((m) => ({ ...m, post_id: next.id })));
 }
 
 /** The post's attachments, each with a signed URL good for an hour and lazily fetched bytes. */

@@ -20,7 +20,7 @@ const SCHEMA_PROBES: [string, string, string][] = [
   ["20261017000000_queue_drafts_snippets_alerts", "posting_slots", "id"],
   ["20261017000001_post_metrics", "post_targets", "metrics"],
   ["20261018000000_threads_utm", "posts", "thread_parts"],
-  ["20261019000000_heartbeat_recurring", "posts", "repeat"],
+  ["20261019000000_heartbeat_recurring", "posts", "next_post_id"],
 ];
 
 function ago(ms: number) {

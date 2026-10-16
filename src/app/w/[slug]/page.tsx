@@ -4,7 +4,7 @@ import { PlatformIcon } from "@/components/platform-icon";
 import { LIVE_PLATFORMS } from "@/lib/platforms/catalog";
 import { createClient } from "@/lib/supabase/server";
 import type { Account, Post, PostTarget } from "@/lib/types";
-import { nextFreeSlot } from "@/lib/slots";
+import { nextFreeSlot, REPEAT_LABEL } from "@/lib/slots";
 import { aiEnabled } from "@/lib/tailor";
 import { getWorkspace } from "@/lib/workspace";
 import { cancelPost, createPost, retryFailed } from "./actions";
@@ -54,7 +54,7 @@ export default async function ComposePage({
   const draft: Draft | null =
     (await loadDraft(supabase, ws.id, edit ?? duplicate, Boolean(edit))) ??
     (sharedText
-      ? { postId: null, status: null, body: sharedText.slice(0, 5000), threadParts: [], accountIds: (accounts ?? []).map((a) => a.id), overrides: {}, media: [], scheduledAt: null }
+      ? { postId: null, status: null, body: sharedText.slice(0, 5000), threadParts: [], repeat: null, accountIds: (accounts ?? []).map((a) => a.id), overrides: {}, media: [], scheduledAt: null }
       : null);
   const upcoming = (posts ?? []).filter((p) => p.status === "scheduled").reverse();
   const drafts = (posts ?? []).filter((p) => p.status === "draft");
@@ -170,6 +170,11 @@ function PostCard({ post, children }: { post: PostRow; children?: React.ReactNod
       <div className="flex items-center gap-2 text-xs text-muted">
         <span className={`badge ${s.cls}`}>{s.label}</span>
         <LocalTime iso={post.scheduled_at} />
+        {post.repeat && (
+          <span className="badge bg-accent/10 text-accent" title="Cancel the next one to stop the series">
+            🔁 {REPEAT_LABEL[post.repeat]}
+          </span>
+        )}
         <span className="ml-auto">{children}</span>
       </div>
       {post.body && <p className="whitespace-pre-wrap text-sm">{post.body}</p>}
@@ -219,7 +224,7 @@ async function loadDraft(
   if (!postId) return null;
   let query = supabase
     .from("posts")
-    .select("id, body, thread_parts, scheduled_at, status, post_media(path, alt, mime, size, position), post_targets(account_id, body)")
+    .select("id, body, thread_parts, repeat, scheduled_at, status, post_media(path, alt, mime, size, position), post_targets(account_id, body)")
     .eq("id", postId)
     .eq("workspace_id", workspaceId);
   if (editing) query = query.in("status", ["scheduled", "draft"]);
@@ -238,6 +243,8 @@ async function loadDraft(
     status: editing ? (data.status as "draft" | "scheduled") : null,
     body: data.body,
     threadParts: data.thread_parts ?? [],
+    // A copy starts its own series only if the user picks a repeat again.
+    repeat: editing ? data.repeat : null,
     accountIds: targets.map((t) => t.account_id),
     overrides: Object.fromEntries(targets.filter((t) => t.body !== null).map((t) => [t.account_id, t.body!])),
     media: media.map((m, i) => ({ ...m, preview: signed?.[i]?.signedUrl ?? "" })),

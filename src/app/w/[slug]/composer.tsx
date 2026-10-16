@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { PlatformIcon } from "@/components/platform-icon";
 import { SubmitButton } from "@/components/submit-button";
 import { getPlatform, MAX_UPLOAD_BYTES, postLength, postProblems, UPLOAD_TYPES } from "@/lib/platforms/catalog";
+import { REPEAT_LABEL, type Repeat } from "@/lib/slots";
 import { createClient } from "@/lib/supabase/client";
 import type { Account } from "@/lib/types";
 import { discardUpload, tailorForAccounts } from "./actions";
@@ -16,6 +17,7 @@ export type Draft = {
   status: "draft" | "scheduled" | null;
   body: string;
   threadParts: string[];
+  repeat: Repeat | null;
   accountIds: string[];
   overrides: Record<string, string>;
   media: { path: string; alt: string | null; mime: string; size: number; preview: string }[];
@@ -67,6 +69,7 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
   const [body, setBody] = useState(draft?.body ?? "");
   // Further thread parts after the main text.
   const [parts, setParts] = useState<string[]>(draft?.threadParts ?? []);
+  const [repeat, setRepeat] = useState<Repeat | "">(draft?.repeat ?? "");
   // Everything's ticked to start with; accounts with a problem show a "check" badge instead of silently dropping out.
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(draft ? draft.accountIds.filter((id) => accounts.some((a) => a.id === id)) : accounts.map((a) => a.id)),
@@ -423,6 +426,19 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
           ))}
         </div>
         <input type="hidden" name="when" value={when} />
+        <select
+          name="repeat"
+          value={repeat}
+          onChange={(e) => setRepeat(e.target.value as Repeat | "")}
+          className="input w-auto px-2 py-1 text-sm"
+          aria-label="Repeat"
+          title="After it goes out, the same post is scheduled again. Cancel the next one to stop the series."
+        >
+          <option value="">Don&apos;t repeat</option>
+          {(Object.keys(REPEAT_LABEL) as Repeat[]).map((r) => (
+            <option key={r} value={r}>🔁 {REPEAT_LABEL[r]}</option>
+          ))}
+        </select>
         {when === "later" && (
           <>
             <input type="datetime-local" value={localTime} onChange={(e) => setLocalTime(e.target.value)} className="input w-auto" required />

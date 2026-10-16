@@ -71,3 +71,30 @@ export function nextFreeSlot(slots: Slot[], timeZone: string, taken: Date[], fro
 }
 
 export const formatMinute = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+/**
+ * Moves an instant by whole days or months in a timezone, keeping the wall-clock time
+ * (a weekly 12:00 post stays at 12:00 across the clocks changing). Month steps land on
+ * the same day, or the month's last day when it's shorter (31 Jan -> 28 Feb).
+ */
+export function addInZone(date: Date, timeZone: string, step: { days?: number; months?: number }): Date {
+  const p = partsIn(date, timeZone);
+  if (step.months) {
+    const target = new Date(Date.UTC(p.year, p.month - 1 + step.months, 1));
+    const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+    return zonedTime(target.getUTCFullYear(), target.getUTCMonth() + 1, Math.min(p.day, lastDay), p.hour, p.minute, timeZone);
+  }
+  const shifted = new Date(Date.UTC(p.year, p.month - 1, p.day + (step.days ?? 0)));
+  return zonedTime(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, shifted.getUTCDate(), p.hour, p.minute, timeZone);
+}
+
+export type Repeat = "weekly" | "fortnightly" | "monthly";
+export const REPEAT_LABEL: Record<Repeat, string> = { weekly: "Every week", fortnightly: "Every 2 weeks", monthly: "Every month" };
+
+/** The next occurrence after `from` that's also in the future. */
+export function nextOccurrence(from: Date, repeat: Repeat, timeZone: string, now = new Date()): Date {
+  const step = repeat === "monthly" ? { months: 1 } : { days: repeat === "weekly" ? 7 : 14 };
+  let next = addInZone(from, timeZone, step);
+  for (let i = 0; next.getTime() <= now.getTime() + 60_000 && i < 520; i++) next = addInZone(next, timeZone, step);
+  return next;
+}

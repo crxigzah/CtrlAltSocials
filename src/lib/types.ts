@@ -37,6 +37,8 @@ export type Post = {
   scheduled_at: string;
   status: PostStatus;
   thread_parts: string[];
+  repeat: "weekly" | "fortnightly" | "monthly" | null;
+  next_post_id: string | null;
   claimed_at: string | null;
   created_at: string;
 };

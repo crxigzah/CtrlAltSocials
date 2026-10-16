@@ -196,9 +196,12 @@ export async function createPost(slug: string, formData: FormData) {
     if (problems.length) back(path, { error: `${a.label} (${platform.name}): ${problems.join(", ")}.` });
   }
 
+  const repeatRaw = String(formData.get("repeat") ?? "");
+  const repeat = ["weekly", "fortnightly", "monthly"].includes(repeatRaw) ? repeatRaw : null;
   const fields = {
     body,
     thread_parts: threadParts,
+    repeat,
     scheduled_at: scheduledAt.toISOString(),
     status: when === "now" ? "publishing" : isDraft ? "draft" : "scheduled",
     claimed_at: when === "now" ? new Date().toISOString() : null,
