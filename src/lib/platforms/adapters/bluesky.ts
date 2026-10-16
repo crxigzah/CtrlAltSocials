@@ -1,4 +1,5 @@
 import "server-only";
+import { fetchLinkPreview, fetchPreviewImage, firstUrl } from "@/lib/link-preview";
 import { PlatformError, readError, type FormAdapter, type MediaFile } from "./shared";
 
 type BlueskyCredentials = { identifier: string; appPassword: string; service: string };
@@ -39,19 +40,38 @@ export function blueskyFacets(text: string) {
   return facets;
 }
 
+async function uploadBlob(service: string, accessJwt: string, bytes: Buffer, mime: string) {
+  const res = await fetch(`${service}/xrpc/com.atproto.repo.uploadBlob`, {
+    method: "POST",
+    headers: { "Content-Type": mime, Authorization: `Bearer ${accessJwt}` },
+    body: new Uint8Array(bytes),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new PlatformError(`Bluesky rejected an image: ${await readError(res)}`);
+  return ((await res.json()) as { blob: unknown }).blob;
+}
+
+/**
+ * Bluesky doesn't build link cards itself: without this a link is just text.
+ * Uses the first link's Open Graph tags; any failure just means no card.
+ */
+async function blueskyLinkCard(service: string, accessJwt: string, text: string) {
+  const url = firstUrl(text);
+  const preview = url ? await fetchLinkPreview(url) : null;
+  if (!preview) return undefined;
+  const image = preview.image ? await fetchPreviewImage(preview.image, 976 * 1024) : null;
+  const thumb = image ? await uploadBlob(service, accessJwt, image.bytes, image.mime).catch(() => undefined) : undefined;
+  return {
+    $type: "app.bsky.embed.external",
+    external: { uri: preview.url, title: preview.title, description: preview.description, ...(thumb ? { thumb } : {}) },
+  };
+}
+
 /** Uploads each image as a blob and returns the embed that attaches them to the post. */
 async function blueskyImages(service: string, accessJwt: string, media: MediaFile[]) {
   const images = [];
   for (const file of media) {
-    const res = await fetch(`${service}/xrpc/com.atproto.repo.uploadBlob`, {
-      method: "POST",
-      headers: { "Content-Type": file.mime, Authorization: `Bearer ${accessJwt}` },
-      body: new Uint8Array(await file.bytes()),
-      cache: "no-store",
-    });
-    if (!res.ok) throw new PlatformError(`Bluesky rejected an image: ${await readError(res)}`);
-    const { blob } = (await res.json()) as { blob: unknown };
-    images.push({ image: blob, alt: file.alt ?? "" });
+    images.push({ image: await uploadBlob(service, accessJwt, await file.bytes(), file.mime), alt: file.alt ?? "" });
   }
   return { $type: "app.bsky.embed.images", images };
 }
@@ -72,7 +92,9 @@ export const bluesky: FormAdapter<BlueskyCredentials> = {
   async publish(c, text, media) {
     const session = await blueskySession(c);
     const facets = blueskyFacets(text);
-    const embed = media.length ? await blueskyImages(c.service, session.accessJwt, media) : undefined;
+    const embed = media.length
+      ? await blueskyImages(c.service, session.accessJwt, media)
+      : await blueskyLinkCard(c.service, session.accessJwt, text);
     const res = await fetch(`${c.service}/xrpc/com.atproto.repo.createRecord`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.accessJwt}` },
