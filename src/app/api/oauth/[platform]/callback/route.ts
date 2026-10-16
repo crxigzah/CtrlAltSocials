@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { saveAccount } from "@/lib/accounts";
-import { decryptJson } from "@/lib/crypto";
+import { decryptJson, encryptJson } from "@/lib/crypto";
 import { describeError, getOAuthAdapter } from "@/lib/platforms/adapters";
 import { OAUTH_COOKIE, redirectUri, type OAuthPending } from "@/lib/oauth";
 import { createClient } from "@/lib/supabase/server";
@@ -49,6 +49,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const result = await adapter.exchange({ code, redirectUri: redirectUri(request, platform), codeVerifier: pending.verifier });
     const supabase = await createClient();
+    if ("choose" in result) {
+      // Several accounts came back; let the user pick the one that belongs to this project.
+      const { data: row, error } = await supabase
+        .from("pending_connections")
+        .insert({ workspace_id: ws.id, platform, choices: encryptJson(result.choose) })
+        .select("id")
+        .single();
+      if (error || !row) return finish(accountsPath, { error: error?.message ?? "Couldn't save the accounts to choose from." });
+      return finish(`${accountsPath}/pick`, { id: row.id });
+    }
     const saved = await saveAccount(supabase, ws.id, platform, result);
     if (saved.error) return finish(accountsPath, { error: saved.error });
     return finish(accountsPath, { [saved.reconnected ? "reconnected" : "connected"]: saved.label });

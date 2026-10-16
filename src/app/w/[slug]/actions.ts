@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { saveAccount } from "@/lib/accounts";
 import { describeError, getAdapter } from "@/lib/platforms/adapters";
-import type { FormAdapter } from "@/lib/platforms/adapters/shared";
+import { decryptJson } from "@/lib/crypto";
+import type { ConnectResult, FormAdapter } from "@/lib/platforms/adapters/shared";
 import { getPlatform, postProblems, UPLOAD_TYPES, type MediaInfo } from "@/lib/platforms/catalog";
 import { publishPost } from "@/lib/publisher";
 import { createClient } from "@/lib/supabase/server";
@@ -82,6 +83,27 @@ export async function connectAccount(slug: string, formData: FormData) {
   }
   const supabase = await createClient();
   const saved = await saveAccount(supabase, ws.id, platform, result, optional(formData.get("label")));
+  if (saved.error) back(path, { error: saved.error });
+  revalidatePath(`/w/${slug}`, "layout");
+  back(path, { [saved.reconnected ? "reconnected" : "connected"]: saved.label });
+}
+
+export async function pickConnection(slug: string, pendingId: string, index: number) {
+  const ws = await getWorkspace(slug);
+  const path = `/w/${slug}/accounts`;
+  const supabase = await createClient();
+  const { data: pending } = await supabase
+    .from("pending_connections")
+    .select("platform, choices, expires_at")
+    .eq("id", pendingId)
+    .eq("workspace_id", ws.id)
+    .maybeSingle();
+  if (!pending || new Date(pending.expires_at) < new Date()) back(path, { error: "That choice expired. Connect the account again." });
+
+  const choice = decryptJson<ConnectResult<unknown>[]>(pending!.choices)[index];
+  await supabase.from("pending_connections").delete().eq("workspace_id", ws.id);
+  if (!choice) back(path, { error: "That option wasn't in the list." });
+  const saved = await saveAccount(supabase, ws.id, pending!.platform, choice);
   if (saved.error) back(path, { error: saved.error });
   revalidatePath(`/w/${slug}`, "layout");
   back(path, { [saved.reconnected ? "reconnected" : "connected"]: saved.label });

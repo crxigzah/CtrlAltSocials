@@ -8,11 +8,11 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 
 - **Projects (workspaces):** each keeps its own accounts. A post can only target accounts in its own project; the database enforces this, not just the UI.
 - **Brand kit + setup checklist:** handle, bio, website and sign-up email per project, with a checklist of every platform's sign-up page, copy buttons, and warnings when the handle or bio is too long for a platform. You do the sign-ups yourself.
-- **Posting:** Bluesky (app password), Discord (channel webhook), Threads and X (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
+- **Posting:** Bluesky (app password), Discord (channel webhook), and Threads, X, Instagram and Facebook Pages (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
 - **Images and video:** attach up to 20 files with alt text and drag-free reordering. The composer checks each platform's rules (count, file type, size, mixing images and video) before you can post. Files upload straight to a private Supabase Storage bucket and platforms get short-lived signed links.
 - **Credentials** are encrypted with AES-256-GCM before they reach the database.
 
-Planned next: Instagram, Facebook Pages, Reddit, YouTube, TikTok. Each needs a developer app registered with the platform.
+Planned next: Reddit, YouTube, TikTok. Each needs a developer app registered with the platform.
 
 ## Setup
 
@@ -30,7 +30,7 @@ Planned next: Instagram, Facebook Pages, Reddit, YouTube, TikTok. Each needs a d
    ```
 4. **Lock down sign-ups:** after creating your own login, turn off new sign-ups in Supabase → Authentication → Sign In / Providers so nobody else can make an account on your deployment.
 
-## Connecting Threads and X
+## Connecting Threads, X, Instagram and Facebook
 
 Both sign in on the platform's own site, so each needs a developer app and `APP_URL` set to the app's public address. Connecting only works for the account you're signed into in that browser, so sign into the right project's account first (a separate browser profile per project makes this painless). Connecting the same account again refreshes it rather than adding a duplicate.
 
@@ -50,6 +50,24 @@ Tokens last 60 days and refresh themselves whenever a post goes out in the last 
 4. Copy the OAuth 2.0 client ID and secret into `X_CLIENT_ID` and `X_CLIENT_SECRET`.
 
 Image uploads need the `media.write` scope, which the app asks for when connecting. X video isn't supported yet.
+
+**Instagram** (Business or Creator accounts only; no Facebook Page needed)
+1. In a Meta app, add the "Instagram API with Instagram Login" product (Instagram → API setup with Instagram login).
+2. Permissions: `instagram_business_basic` and `instagram_business_content_publish`.
+3. Business login settings → redirect URL: `<APP_URL>/api/oauth/instagram/callback`.
+4. Copy the Instagram app ID and secret into `INSTAGRAM_APP_ID` and `INSTAGRAM_APP_SECRET`.
+5. While in development, add the project's Instagram account as an Instagram tester.
+
+Instagram can't post text on its own, only JPEG images, and a single video goes out as a Reel.
+
+**Facebook Pages**
+1. In a Meta app, add Facebook Login and set the valid OAuth redirect URI to `<APP_URL>/api/oauth/facebook/callback`.
+2. Permissions: `pages_show_list`, `pages_manage_posts`, `pages_read_engagement`.
+3. Copy the app ID and secret into `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET`.
+
+If your Facebook login manages several Pages, you'll be asked which one belongs to the project. Only that one is saved.
+
+One Meta app can carry Threads, Instagram and Facebook Login together, but each product has its own app ID and secret.
 
 ## Scheduled posts
 

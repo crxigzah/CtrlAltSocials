@@ -40,7 +40,8 @@ export type OAuthAdapter<C> = Base<C> & {
   /** Env vars this platform needs; connecting is disabled until they're set. */
   env: string[];
   authorizeUrl(opts: { state: string; redirectUri: string; codeChallenge: string }): string;
-  exchange(opts: { code: string; redirectUri: string; codeVerifier: string }): Promise<ConnectResult<C>>;
+  /** One account, or several for the user to choose from (e.g. every Page a Facebook login manages). */
+  exchange(opts: { code: string; redirectUri: string; codeVerifier: string }): Promise<ConnectResult<C> | { choose: ConnectResult<C>[] }>;
 };
 
 export type Adapter<C> = FormAdapter<C> | OAuthAdapter<C>;

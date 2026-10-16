@@ -2,6 +2,8 @@ import "server-only";
 import type { PlatformId } from "@/lib/platforms/catalog";
 import { bluesky } from "./bluesky";
 import { discord } from "./discord";
+import { facebook } from "./facebook";
+import { instagram } from "./instagram";
 import { PlatformError, type Adapter, type OAuthAdapter } from "./shared";
 import { threads } from "./threads";
 import { x } from "./x";
@@ -12,6 +14,8 @@ const ADAPTERS: Partial<Record<PlatformId, Adapter<never>>> = {
   bluesky: bluesky as Adapter<never>,
   discord: discord as Adapter<never>,
   threads: threads as Adapter<never>,
+  instagram: instagram as Adapter<never>,
+  facebook: facebook as Adapter<never>,
   x: x as Adapter<never>,
 };
 

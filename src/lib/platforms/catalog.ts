@@ -93,11 +93,11 @@ export const PLATFORMS: Platform[] = [
   {
     id: "instagram",
     name: "Instagram",
-    status: "planned",
+    status: "live",
     connect: "oauth",
     maxLength: 2200,
     signupUrl: "https://www.instagram.com/accounts/emailsignup/",
-    signupTip: "Switch it to a Professional (Business or Creator) account and link it to the project's Facebook Page, or the API can't post to it.",
+    signupTip: "After signing up, switch it to a Professional account (Settings → Account type and tools → Switch to professional account). The API can't post to personal accounts. No Facebook Page needed.",
     handleMax: 30,
     bioMax: 150,
     media: { maxItems: 10, imageTypes: ["image/jpeg"], videoTypes: MP4, maxImageBytes: 8 * MB, maxVideoBytes: MAX_UPLOAD_BYTES, mixed: true, requiresMedia: true },
@@ -105,7 +105,7 @@ export const PLATFORMS: Platform[] = [
   {
     id: "facebook",
     name: "Facebook Page",
-    status: "planned",
+    status: "live",
     connect: "oauth",
     maxLength: 63206,
     signupUrl: "https://www.facebook.com/pages/create",
