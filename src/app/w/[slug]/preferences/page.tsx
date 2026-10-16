@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireOwner } from "@/lib/workspace";
 import { CopyButton } from "../setup/copy-button";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { setRequireApproval } from "./actions";
 import { addSlots, addSnippet, createInvite, removeMember, removeSlot, removeSnippet, revokeInvite, setAlertWebhook, setLinkTracking, setTimezone } from "./actions";
 
 export const metadata = { title: "Settings" };
@@ -85,6 +86,13 @@ export default async function PreferencesPage({
             </li>
           ))}
         </ul>
+        <form action={setRequireApproval.bind(null, slug)} className="flex flex-wrap items-center gap-3 rounded-lg border border-line p-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="require_approval" defaultChecked={ws.require_approval} className="accent-[var(--color-accent)]" />
+            Editors&apos; posts need my approval before they go out
+          </label>
+          <SubmitButton className="btn-ghost ml-auto px-3 py-1 text-xs" pendingText="Saving…">Save</SubmitButton>
+        </form>
         <form action={createInvite.bind(null, slug)} className="flex flex-wrap gap-2">
           <input name="email" type="email" placeholder="Their email (optional: locks the link to it)" className="input min-w-0 flex-1" />
           <SubmitButton className="btn-ghost" pendingText="Creating…">Create invite link</SubmitButton>

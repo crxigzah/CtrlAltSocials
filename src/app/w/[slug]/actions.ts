@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { saveAccount } from "@/lib/accounts";
+import { sendAlert } from "@/lib/alerts";
 import { describeError, getAdapter } from "@/lib/platforms/adapters";
 import { decryptJson, encryptJson } from "@/lib/crypto";
 import { SUBREDDIT_RE, type RedditCredentials } from "@/lib/platforms/adapters/reddit";
@@ -156,6 +157,8 @@ export async function createPost(slug: string, formData: FormData) {
   const scheduledRaw = String(formData.get("scheduled_at") ?? "");
 
   const isDraft = when === "draft";
+  // Editors' posts wait for the owner when the project requires approval.
+  const needsApproval = ws.role !== "owner" && ws.require_approval && !isDraft;
   if (accountIds.length === 0 && !isDraft) back(path, { error: "Pick at least one account to post to." });
 
   let scheduledAt = new Date();
@@ -204,8 +207,11 @@ export async function createPost(slug: string, formData: FormData) {
     thread_parts: threadParts,
     repeat,
     scheduled_at: scheduledAt.toISOString(),
-    status: when === "now" ? "publishing" : isDraft ? "draft" : "scheduled",
-    claimed_at: when === "now" ? new Date().toISOString() : null,
+    status: isDraft ? "draft" : needsApproval ? "pending_approval" : when === "now" ? "publishing" : "scheduled",
+    claimed_at: when === "now" && !needsApproval ? new Date().toISOString() : null,
+    // Saving again clears any note from a previous send-back, and needs approving again.
+    review_note: null,
+    approved_by: needsApproval || isDraft ? null : (await supabase.auth.getUser()).data.user?.id ?? null,
   };
   const editId = optional(formData.get("post_id"));
   let post: Post | null;
@@ -219,10 +225,10 @@ export async function createPost(slug: string, formData: FormData) {
       .select("post_media(path)")
       .eq("id", editId)
       .eq("workspace_id", ws.id)
-      .in("status", ["scheduled", "draft"])
+      .in("status", ["scheduled", "draft", "pending_approval"])
       .maybeSingle();
     const { data: updated } = before
-      ? await supabase.from("posts").update(fields).eq("id", editId).in("status", ["scheduled", "draft"]).select().maybeSingle<Post>()
+      ? await supabase.from("posts").update(fields).eq("id", editId).in("status", ["scheduled", "draft", "pending_approval"]).select().maybeSingle<Post>()
       : { data: null };
     if (!updated) return back(path, { error: "That post has already been sent or cancelled, so it can't be edited." });
     post = updated;
@@ -248,6 +254,13 @@ export async function createPost(slug: string, formData: FormData) {
     back(path, { error: (targetError ?? mediaError)!.message });
   }
   await removeUnreferenced(supabase, dropped);
+
+  if (needsApproval) {
+    const { data: me } = await supabase.auth.getUser();
+    await sendAlert(createAdminClient(), ws.id, `📝 **${ws.name}**: ${me.user?.email ?? "An editor"} sent a post for approval.\n> ${(body || "(attachments only)").slice(0, 140).replace(/\n/g, " ")}${process.env.APP_URL ? `\n${process.env.APP_URL.replace(/\/$/, "")}/w/${ws.slug}` : ""}`);
+    revalidatePath(path);
+    back(path, { scheduled: "approval" });
+  }
 
   if (when === "now") {
     // Membership is already checked above. Sending uses the service role because it may
@@ -294,7 +307,7 @@ export async function cancelPost(slug: string, postId: string) {
     .delete()
     .eq("id", postId)
     .eq("workspace_id", ws.id)
-    .in("status", ["scheduled", "draft"])
+    .in("status", ["scheduled", "draft", "pending_approval"])
     .select("id");
   const paths = deleted?.length ? (media ?? []).map((m) => m.path) : [];
   await removeUnreferenced(supabase, paths);
@@ -390,4 +403,38 @@ export async function listLibrary(slug: string): Promise<LibraryItem[]> {
   if (!items.length) return [];
   const { data: signed } = await supabase.storage.from("media").createSignedUrls(items.map((i) => i.path), 60 * 60);
   return items.map((item, i) => ({ ...item, url: signed?.[i]?.signedUrl ?? "" })).filter((i) => i.url);
+}
+
+// --- Approvals -------------------------------------------------------------------
+
+/** Owner approves a waiting post: it's scheduled, or sent straight away if its time has passed. */
+export async function approvePost(slug: string, postId: string) {
+  const ws = await requireOwner(slug);
+  const path = `/w/${slug}`;
+  const supabase = await createClient();
+  const { data: me } = await supabase.auth.getUser();
+  const { data: post } = await supabase.from("posts").select("scheduled_at").eq("id", postId).eq("workspace_id", ws.id).eq("status", "pending_approval").maybeSingle();
+  if (!post) back(path, { error: "That post isn't waiting for approval any more." });
+  const due = new Date(post!.scheduled_at).getTime() <= Date.now() + 60_000;
+  const { data: approved } = await supabase
+    .from("posts")
+    .update({ status: due ? "publishing" : "scheduled", approved_by: me.user?.id, claimed_at: due ? new Date().toISOString() : null, review_note: null })
+    .eq("id", postId)
+    .eq("status", "pending_approval")
+    .select()
+    .maybeSingle<Post>();
+  if (!approved) back(path, { error: "That post isn't waiting for approval any more." });
+  revalidatePath(path);
+  if (due) back(path, { posted: await publishPost(createAdminClient(), approved!) });
+  back(path, { scheduled: "approved" });
+}
+
+/** Owner sends a waiting post back to the editor as a draft, with a note saying why. */
+export async function rejectPost(slug: string, postId: string, formData: FormData) {
+  const ws = await requireOwner(slug);
+  const supabase = await createClient();
+  const note = String(formData.get("note") ?? "").trim().slice(0, 1000) || "Sent back without a note.";
+  await supabase.from("posts").update({ status: "draft", review_note: note }).eq("id", postId).eq("workspace_id", ws.id).eq("status", "pending_approval");
+  revalidatePath(`/w/${slug}`);
+  back(`/w/${slug}`, { scheduled: "returned" });
 }

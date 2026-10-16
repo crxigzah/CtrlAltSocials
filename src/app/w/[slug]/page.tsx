@@ -7,7 +7,8 @@ import type { Account, Post, PostTarget } from "@/lib/types";
 import { nextFreeSlot, REPEAT_LABEL } from "@/lib/slots";
 import { aiEnabled } from "@/lib/tailor";
 import { getWorkspace } from "@/lib/workspace";
-import { cancelPost, createPost, retryFailed } from "./actions";
+import { approvePost, cancelPost, createPost, rejectPost, retryFailed } from "./actions";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { Composer, type Draft } from "./composer";
 import { LocalTime } from "@/components/local-time";
 
@@ -19,6 +20,7 @@ type PostRow = Post & { post_media: { id: string; mime: string; alt: string | nu
 
 const POST_STATUS: Record<Post["status"], { label: string; cls: string }> = {
   draft: { label: "Draft", cls: "bg-raised text-muted" },
+  pending_approval: { label: "Waiting for approval", cls: "bg-warn/15 text-warn" },
   scheduled: { label: "Scheduled", cls: "bg-accent/15 text-accent" },
   publishing: { label: "Sending", cls: "bg-warn/15 text-warn" },
   done: { label: "Posted", cls: "bg-ok/15 text-ok" },
@@ -58,7 +60,20 @@ export default async function ComposePage({
       : null);
   const upcoming = (posts ?? []).filter((p) => p.status === "scheduled").reverse();
   const drafts = (posts ?? []).filter((p) => p.status === "draft");
-  const history = (posts ?? []).filter((p) => p.status !== "scheduled" && p.status !== "draft");
+  const pending = (posts ?? []).filter((p) => p.status === "pending_approval").reverse();
+  const history = (posts ?? []).filter((p) => !["scheduled", "draft", "pending_approval"].includes(p.status));
+  const isOwner = ws.role === "owner";
+
+  // Who wrote and approved what, once there's more than one person on the project.
+  const { data: members } = await supabase.from("workspace_members").select("user_id").eq("workspace_id", ws.id);
+  const people = new Map<string, string>();
+  if ((members ?? []).length > 1) {
+    const admin = createAdminClient();
+    for (const m of members!) {
+      const { data } = await admin.auth.admin.getUserById(m.user_id);
+      if (data.user?.email) people.set(m.user_id, data.user.email.split("@")[0]);
+    }
+  }
 
   const [{ data: snippets }, { data: slots }] = await Promise.all([
     supabase.from("snippets").select("id, name, body").eq("workspace_id", ws.id).order("created_at"),
@@ -78,6 +93,9 @@ export default async function ComposePage({
       {scheduled === "1" && <p className="notice-ok">Scheduled.</p>}
       {queuedAt && <p className="notice-ok">Added to the queue for {fmt(queuedAt)}.</p>}
       {scheduled === "draft" && <p className="notice-ok">Draft saved.</p>}
+      {scheduled === "approval" && <p className="notice-ok">Sent to the owner for approval. It goes out once they approve it.</p>}
+      {scheduled === "approved" && <p className="notice-ok">Approved and scheduled.</p>}
+      {scheduled === "returned" && <p className="notice-ok">Sent back to the editor as a draft.</p>}
       {joined && <p className="notice-ok">You&apos;ve joined {ws.name} as an editor.</p>}
       {imported && <p className="notice-ok">Imported {imported} post{imported === "1" ? "" : "s"}.</p>}
       {scheduled === "updated" && <p className="notice-ok">Changes saved.</p>}
@@ -112,6 +130,7 @@ export default async function ComposePage({
           aiEnabled={aiEnabled()}
           snippets={snippets ?? []}
           brand={{ name: ws.name, handle: ws.handle, color: ws.color }}
+          needsApproval={ws.role !== "owner" && ws.require_approval}
           nextSlot={next ? fmt(next) : null}
           slug={slug}
           workspaceId={ws.id}
@@ -120,11 +139,42 @@ export default async function ComposePage({
         />
       )}
 
+      {pending.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="font-semibold">Waiting for approval</h2>
+          {pending.map((p) => (
+            <PostCard key={p.id} post={p} people={people}>
+              {isOwner ? (
+                <span className="flex items-center gap-3">
+                  <form action={approvePost.bind(null, slug, p.id)}>
+                    <button className="text-xs font-medium text-ok hover:underline">Approve</button>
+                  </form>
+                  <details className="relative">
+                    <summary className="cursor-pointer list-none text-xs text-muted hover:text-bad">Send back</summary>
+                    <form action={rejectPost.bind(null, slug, p.id)} className="absolute right-0 z-10 mt-1 w-64 space-y-2 rounded-lg border border-line bg-panel p-2 shadow-lg">
+                      <textarea name="note" rows={2} maxLength={1000} placeholder="What needs changing?" className="input text-xs" />
+                      <button className="btn-ghost w-full px-2 py-1 text-xs">Send back as a draft</button>
+                    </form>
+                  </details>
+                </span>
+              ) : (
+                <span className="flex items-center gap-3">
+                  <Link href={`/w/${slug}?edit=${p.id}`} className="text-xs text-accent hover:underline">Edit</Link>
+                  <form action={cancelPost.bind(null, slug, p.id)}>
+                    <button className="text-xs text-muted hover:text-bad">Withdraw</button>
+                  </form>
+                </span>
+              )}
+            </PostCard>
+          ))}
+        </section>
+      )}
+
       {drafts.length > 0 && (
         <section className="space-y-3">
           <h2 className="font-semibold">Drafts</h2>
           {drafts.map((p) => (
-            <PostCard key={p.id} post={p}>
+            <PostCard key={p.id} post={p} people={people}>
               <span className="flex items-center gap-3">
                 <Link href={`/w/${slug}?edit=${p.id}`} className="text-xs text-accent hover:underline">Open</Link>
                 <form action={cancelPost.bind(null, slug, p.id)}>
@@ -140,7 +190,7 @@ export default async function ComposePage({
         <section className="space-y-3">
           <h2 className="font-semibold">Queue</h2>
           {upcoming.map((p) => (
-            <PostCard key={p.id} post={p}>
+            <PostCard key={p.id} post={p} people={people}>
               <span className="flex items-center gap-3">
                 <Link href={`/w/${slug}?edit=${p.id}`} className="text-xs text-accent hover:underline">Edit</Link>
                 <form action={cancelPost.bind(null, slug, p.id)}>
@@ -156,7 +206,7 @@ export default async function ComposePage({
         <h2 className="font-semibold">History</h2>
         {history.length === 0 && <p className="text-sm text-subtle">Nothing posted yet.</p>}
         {history.map((p) => (
-          <PostCard key={p.id} post={p}>
+          <PostCard key={p.id} post={p} people={people}>
             <span className="flex items-center gap-3">
               {(p.status === "failed" || p.status === "partial") && (
                 <form action={retryFailed.bind(null, slug, p.id)}>
@@ -172,7 +222,7 @@ export default async function ComposePage({
   );
 }
 
-function PostCard({ post, children }: { post: PostRow; children?: React.ReactNode }) {
+function PostCard({ post, children, people }: { post: PostRow; children?: React.ReactNode; people?: Map<string, string> }) {
   const s = POST_STATUS[post.status];
   return (
     <article className="card space-y-3 p-4">
@@ -184,8 +234,17 @@ function PostCard({ post, children }: { post: PostRow; children?: React.ReactNod
             🔁 {REPEAT_LABEL[post.repeat]}
           </span>
         )}
+        {people && post.created_by && people.get(post.created_by) && (
+          <span className="text-subtle">
+            by {people.get(post.created_by)}
+            {post.approved_by && post.approved_by !== post.created_by && people.get(post.approved_by) && <> · approved by {people.get(post.approved_by)}</>}
+          </span>
+        )}
         <span className="ml-auto">{children}</span>
       </div>
+      {post.status === "draft" && post.review_note && (
+        <p className="rounded-md border border-warn/40 bg-warn/10 px-2 py-1 text-xs text-warn">Sent back: {post.review_note}</p>
+      )}
       {post.body && <p className="whitespace-pre-wrap text-sm">{post.body}</p>}
       {(post.thread_parts ?? []).map((part, i) => (
         <p key={i} className="whitespace-pre-wrap border-l-2 border-accent/40 pl-3 text-sm">
@@ -236,7 +295,7 @@ async function loadDraft(
     .select("id, body, thread_parts, repeat, scheduled_at, status, post_media(path, alt, mime, size, position), post_targets(account_id, body)")
     .eq("id", postId)
     .eq("workspace_id", workspaceId);
-  if (editing) query = query.in("status", ["scheduled", "draft"]);
+  if (editing) query = query.in("status", ["scheduled", "draft", "pending_approval"]);
   const { data } = await query.maybeSingle();
   if (!data) return null;
 
@@ -249,7 +308,7 @@ async function loadDraft(
   const targets = data.post_targets as { account_id: string; body: string | null }[];
   return {
     postId: editing ? data.id : null,
-    status: editing ? (data.status as "draft" | "scheduled") : null,
+    status: editing ? (data.status === "draft" ? "draft" : "scheduled") : null,
     body: data.body,
     threadParts: data.thread_parts ?? [],
     // A copy starts its own series only if the user picks a repeat again.

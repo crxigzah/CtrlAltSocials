@@ -22,6 +22,7 @@ const SCHEMA_PROBES: [string, string, string][] = [
   ["20261018000000_threads_utm", "posts", "thread_parts"],
   ["20261019000000_heartbeat_recurring", "posts", "next_post_id"],
   ["20261020000000_members", "workspace_members", "role"],
+  ["20261021000000_approvals", "posts", "review_note"],
 ];
 
 function ago(ms: number) {

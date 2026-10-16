@@ -14,6 +14,7 @@ export type Workspace = {
   timezone: string;
   alert_webhook: string | null;
   utm_enabled: boolean;
+  require_approval: boolean;
   utm_campaign: string | null;
   created_at: string;
 };
@@ -28,7 +29,7 @@ export type Account = {
   created_at: string;
 };
 
-export type PostStatus = "draft" | "scheduled" | "publishing" | "done" | "partial" | "failed";
+export type PostStatus = "draft" | "pending_approval" | "scheduled" | "publishing" | "done" | "partial" | "failed";
 
 export type Post = {
   id: string;
@@ -37,6 +38,9 @@ export type Post = {
   scheduled_at: string;
   status: PostStatus;
   thread_parts: string[];
+  created_by: string | null;
+  approved_by: string | null;
+  review_note: string | null;
   repeat: "weekly" | "fortnightly" | "monthly" | null;
   next_post_id: string | null;
   claimed_at: string | null;

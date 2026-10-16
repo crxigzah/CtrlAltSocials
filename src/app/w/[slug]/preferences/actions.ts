@@ -106,6 +106,15 @@ export async function removeSnippet(slug: string, snippetId: string) {
   revalidatePath(`/w/${slug}`, "layout");
 }
 
+export async function setRequireApproval(slug: string, formData: FormData) {
+  const ws = await requireOwner(slug);
+  const on = formData.get("require_approval") === "on";
+  const supabase = await createClient();
+  await supabase.from("workspaces").update({ require_approval: on }).eq("id", ws.id);
+  revalidatePath(`/w/${slug}`, "layout");
+  back(slug, { saved: on ? "Editors' posts now need your approval." : "Editors can now schedule without approval." });
+}
+
 // --- Members ---------------------------------------------------------------------
 
 /** Makes a single-use invite link (valid 7 days). The secret is shown once; only its hash is stored. */

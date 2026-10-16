@@ -42,3 +42,21 @@ export async function sendFailureAlert(supabase: SupabaseClient, post: Post, sta
     console.error("failure alert not sent", post.id, err);
   }
 }
+
+/** Posts a message to a project's alert channel, if it has one. Best effort. */
+export async function sendAlert(supabase: SupabaseClient, workspaceId: string, content: string) {
+  try {
+    const { data: ws } = await supabase.from("workspaces").select("alert_webhook").eq("id", workspaceId).single();
+    if (!ws?.alert_webhook) return;
+    const { webhookUrl } = decryptJson<{ webhookUrl: string }>(ws.alert_webhook);
+    await fetch(`${webhookUrl}?wait=false`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: content.slice(0, 2000), allowed_mentions: { parse: [] } }),
+      signal: AbortSignal.timeout(5000),
+      cache: "no-store",
+    });
+  } catch (err) {
+    console.error("alert not sent", workspaceId, err);
+  }
+}

@@ -37,6 +37,8 @@ type Props = {
   /** Preview of the project's next free posting slot, or null when it has none. */
   nextSlot?: string | null;
   brand?: PreviewBrand;
+  /** An editor on a project that requires approval: posts go to the owner instead of out. */
+  needsApproval?: boolean;
 };
 
 type When = "now" | "later" | "queue" | "draft";
@@ -66,7 +68,7 @@ function localInputValue(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled, snippets = [], nextSlot = null, brand }: Props) {
+export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled, snippets = [], nextSlot = null, brand, needsApproval = false }: Props) {
   const editing = Boolean(draft?.postId);
   const [body, setBody] = useState(draft?.body ?? "");
   // Further thread parts after the main text.
@@ -550,7 +552,9 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
         >
           {uploading
             ? "Uploading…"
-            : when === "now"
+            : needsApproval && when !== "draft"
+              ? "Send for approval"
+              : when === "now"
               ? `Post to ${selected.size}`
               : when === "draft"
                 ? "Save draft"
