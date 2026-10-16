@@ -31,11 +31,21 @@ export type MediaFile = {
   filename: string;
 };
 
+export type PublishOptions = {
+  /**
+   * Adds tracking tags to a link to the project's site. Only for platforms that show
+   * the link text and its target separately (Bluesky); everywhere else the text
+   * arrives already tagged.
+   */
+  tagLink?: (url: string) => string;
+};
+
 /** Engagement as the platform reports it; platforms that don't report a number leave it out. */
 export type Metrics = { views?: number; likes?: number; comments?: number; shares?: number };
 
 type Base<C> = {
-  publish(credentials: C, text: string, media: MediaFile[]): Promise<PublishResult<C>>;
+  /** `thread` holds any further parts, posted as replies (only on platforms marked `threads` in the catalog). */
+  publish(credentials: C, text: string, media: MediaFile[], thread?: string[], options?: PublishOptions): Promise<PublishResult<C>>;
   /** Current numbers for a post this account made. `credentials` is set when a token was refreshed. */
   metrics?(credentials: C, remoteId: string): Promise<{ metrics: Metrics; credentials?: C }>;
 };
@@ -57,6 +67,12 @@ export type OAuthAdapter<C> = Base<C> & {
 };
 
 export type Adapter<C> = FormAdapter<C> | OAuthAdapter<C>;
+
+/** Note for a thread that stopped partway: the first post is live, so this isn't a failure to retry. */
+export function partialThreadNote(sent: number, total: number, err: unknown) {
+  const reason = err instanceof PlatformError ? err.message : "the platform didn't respond";
+  return `Only ${sent} of ${total} thread parts went out (${reason}). Post the rest by hand as replies.`;
+}
 
 export async function readError(res: Response): Promise<string> {
   const text = await res.text().catch(() => "");

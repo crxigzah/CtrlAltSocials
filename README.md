@@ -15,6 +15,9 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Drafts and snippets:** save half-finished posts, and keep hashtag sets or sign-offs to insert with one click.
 - **Failure alerts:** a Discord webhook per project gets a message, with the reason, whenever a scheduled post fails or only partly goes out.
 - **Insights:** likes, comments, shares and views pulled back from each platform (hourly for a post's first day, then every six hours for two weeks), with 30-day totals against the previous 30 days, a per-platform breakdown and top posts. Discord doesn't report numbers.
+- **Threads:** add parts to a post and X, Bluesky and Threads get them as a reply chain; other platforms get them joined into one post. If a later part fails, the post isn't retried (the first part is already live) and the history says how far it got.
+- **Link tracking:** optionally tags links to the project's website with `utm_source` (the platform), `utm_medium=social` and a campaign, so site analytics shows where visitors came from. Bluesky keeps the visible link clean, and a post is sent untagged rather than going over a platform's limit.
+- **Install on your phone:** add it to the home screen for a full-screen app. On Android it also appears in the share sheet, so a link shared from any app opens a new post.
 - **Calendar:** a month view per project, plus a "Coming up" list across every project on the home page.
 - **Edit and post again:** change a scheduled post right up until it goes out, or copy any earlier post (text, attachments and per-account wording) into the composer.
 - **Tailor with AI (optional):** with `ANTHROPIC_API_KEY` set, one click has Claude write a version of the post for each ticked account (shorter for X, "link in bio" and hashtags for Instagram, a title line for Reddit and YouTube) into the per-account boxes, for you to check before posting.

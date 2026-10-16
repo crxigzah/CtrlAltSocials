@@ -148,6 +148,8 @@ export async function createPost(slug: string, formData: FormData) {
   const ws = await getWorkspace(slug);
   const path = `/w/${slug}`;
   const body = String(formData.get("body") ?? "").trim();
+  // Further thread parts, in order; blank boxes are dropped.
+  const threadParts = formData.getAll("thread_part").map((p) => String(p).trim().slice(0, 5000)).filter(Boolean).slice(0, 25);
   const accountIds = formData.getAll("account_ids").map(String);
   const when = String(formData.get("when") ?? "now");
   const scheduledRaw = String(formData.get("scheduled_at") ?? "");
@@ -190,12 +192,13 @@ export async function createPost(slug: string, formData: FormData) {
   // Drafts can be half-finished; the checks run when they're scheduled or posted.
   for (const a of isDraft ? [] : accounts!) {
     const platform = getPlatform(a.platform)!;
-    const problems = postProblems(platform, overrides.get(a.id) ?? body, media);
+    const problems = postProblems(platform, overrides.get(a.id) ?? body, media, threadParts);
     if (problems.length) back(path, { error: `${a.label} (${platform.name}): ${problems.join(", ")}.` });
   }
 
   const fields = {
     body,
+    thread_parts: threadParts,
     scheduled_at: scheduledAt.toISOString(),
     status: when === "now" ? "publishing" : isDraft ? "draft" : "scheduled",
     claimed_at: when === "now" ? new Date().toISOString() : null,

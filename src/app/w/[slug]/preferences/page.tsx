@@ -2,7 +2,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { formatMinute, nextFreeSlot, WEEKDAYS } from "@/lib/slots";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspace } from "@/lib/workspace";
-import { addSlots, addSnippet, removeSlot, removeSnippet, setAlertWebhook, setTimezone } from "./actions";
+import { addSlots, addSnippet, removeSlot, removeSnippet, setAlertWebhook, setLinkTracking, setTimezone } from "./actions";
 
 export const metadata = { title: "Settings" };
 
@@ -100,6 +100,30 @@ export default async function PreferencesPage({
           <input name="webhook_url" type="url" placeholder="https://discord.com/api/webhooks/…" className="input min-w-0 flex-1 font-mono" autoComplete="off" />
           <SubmitButton className="btn-ghost" pendingText="Testing…">{ws.alert_webhook ? "Replace" : "Turn on"}</SubmitButton>
         </form>
+      </section>
+
+      <section className="card space-y-4">
+        <div>
+          <h2 className="font-semibold">Link tracking</h2>
+          <p className="text-sm text-muted">
+            Adds <code className="font-mono text-xs">utm_source</code>, <code className="font-mono text-xs">utm_medium</code> and{" "}
+            <code className="font-mono text-xs">utm_campaign</code> to links to {ws.website ?? "the project's website"} as each post goes out, so your
+            site&apos;s analytics shows which platform sent each visitor. Other links are left alone. On Bluesky the visible link stays clean.
+          </p>
+        </div>
+        <form action={setLinkTracking.bind(null, slug)} className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="utm_enabled" defaultChecked={ws.utm_enabled} className="accent-[var(--color-accent)]" />
+            Tag links
+          </label>
+          <input name="utm_campaign" defaultValue={ws.utm_campaign ?? ""} placeholder="campaign (default: ctrlaltsocials)" className="input w-64 px-2 py-1" />
+          <SubmitButton className="btn-ghost px-3 py-1 text-xs" pendingText="Saving…">Save</SubmitButton>
+        </form>
+        {ws.utm_enabled && ws.website && (
+          <p className="text-xs text-subtle font-mono break-all">
+            e.g. {ws.website.replace(/\/$/, "")}/page?utm_source=bluesky&amp;utm_medium=social&amp;utm_campaign={ws.utm_campaign || "ctrlaltsocials"}
+          </p>
+        )}
       </section>
 
       <section className="card space-y-4">

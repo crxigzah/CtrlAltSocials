@@ -31,10 +31,10 @@ export default async function ComposePage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ error?: string; posted?: string; scheduled?: string; edit?: string; duplicate?: string }>;
+  searchParams: Promise<{ error?: string; posted?: string; scheduled?: string; edit?: string; duplicate?: string; text?: string }>;
 }) {
   const { slug } = await params;
-  const { error, posted, scheduled, edit, duplicate } = await searchParams;
+  const { error, posted, scheduled, edit, duplicate, text: sharedText } = await searchParams;
   const ws = await getWorkspace(slug);
   const supabase = await createClient();
 
@@ -50,7 +50,12 @@ export default async function ComposePage({
       .returns<PostRow[]>(),
   ]);
 
-  const draft = await loadDraft(supabase, ws.id, edit ?? duplicate, Boolean(edit));
+  // Text shared in from the phone's share sheet starts a fresh post.
+  const draft: Draft | null =
+    (await loadDraft(supabase, ws.id, edit ?? duplicate, Boolean(edit))) ??
+    (sharedText
+      ? { postId: null, status: null, body: sharedText.slice(0, 5000), threadParts: [], accountIds: (accounts ?? []).map((a) => a.id), overrides: {}, media: [], scheduledAt: null }
+      : null);
   const upcoming = (posts ?? []).filter((p) => p.status === "scheduled").reverse();
   const drafts = (posts ?? []).filter((p) => p.status === "draft");
   const history = (posts ?? []).filter((p) => p.status !== "scheduled" && p.status !== "draft");
@@ -79,7 +84,9 @@ export default async function ComposePage({
         <p className="flex items-center gap-3 text-sm text-muted">
           {draft.postId
             ? draft.status === "draft" ? "Editing a draft." : "Editing a scheduled post."
-            : "Copied from an earlier post. Change anything you like, then post or schedule it."}
+            : sharedText && !duplicate
+              ? "Shared from another app."
+              : "Copied from an earlier post. Change anything you like, then post or schedule it."}
           <Link href={`/w/${slug}`} className="link">{draft.postId ? "Stop editing" : "Start fresh"}</Link>
         </p>
       )}
@@ -92,7 +99,7 @@ export default async function ComposePage({
         </div>
       ) : (
         <Composer
-          key={draft ? `${draft.postId ?? "copy"}-${edit ?? duplicate}` : "new"}
+          key={draft ? `${draft.postId ?? "copy"}-${edit ?? duplicate ?? "shared"}` : "new"}
           draft={draft ?? undefined}
           aiEnabled={aiEnabled()}
           snippets={snippets ?? []}
@@ -166,6 +173,12 @@ function PostCard({ post, children }: { post: PostRow; children?: React.ReactNod
         <span className="ml-auto">{children}</span>
       </div>
       {post.body && <p className="whitespace-pre-wrap text-sm">{post.body}</p>}
+      {(post.thread_parts ?? []).map((part, i) => (
+        <p key={i} className="whitespace-pre-wrap border-l-2 border-accent/40 pl-3 text-sm">
+          <span className="mr-1.5 text-subtle" aria-label={`Thread part ${i + 2}`}>↳</span>
+          {part}
+        </p>
+      ))}
       {post.post_media.length > 0 && (
         <p className="text-xs text-muted">
           📎 {post.post_media.length} attachment{post.post_media.length === 1 ? "" : "s"}
@@ -206,7 +219,7 @@ async function loadDraft(
   if (!postId) return null;
   let query = supabase
     .from("posts")
-    .select("id, body, scheduled_at, status, post_media(path, alt, mime, size, position), post_targets(account_id, body)")
+    .select("id, body, thread_parts, scheduled_at, status, post_media(path, alt, mime, size, position), post_targets(account_id, body)")
     .eq("id", postId)
     .eq("workspace_id", workspaceId);
   if (editing) query = query.in("status", ["scheduled", "draft"]);
@@ -224,6 +237,7 @@ async function loadDraft(
     postId: editing ? data.id : null,
     status: editing ? (data.status as "draft" | "scheduled") : null,
     body: data.body,
+    threadParts: data.thread_parts ?? [],
     accountIds: targets.map((t) => t.account_id),
     overrides: Object.fromEntries(targets.filter((t) => t.body !== null).map((t) => [t.account_id, t.body!])),
     media: media.map((m, i) => ({ ...m, preview: signed?.[i]?.signedUrl ?? "" })),

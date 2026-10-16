@@ -28,6 +28,8 @@ export type Platform = {
   handleMax: number;
   bioMax: number;
   media: MediaRules;
+  /** Posts extra thread parts as a reply chain; other platforms get the parts joined into one post. */
+  threads?: boolean;
 };
 
 export type MediaRules = {
@@ -66,6 +68,7 @@ export const PLATFORMS: Platform[] = [
     signupTip: "Free to post. After signing up, create an app password in Settings → Privacy and security → App passwords and use that to connect here, never your main password.",
     handleMax: 18,
     bioMax: 256,
+    threads: true,
     media: { maxItems: 4, imageTypes: COMMON_IMAGES, videoTypes: [], maxImageBytes: 976 * 1024, maxVideoBytes: 0, mixed: false },
   },
   {
@@ -90,6 +93,7 @@ export const PLATFORMS: Platform[] = [
     signupTip: "Sign up in a private window with \"Continue with Google\" using the project's own Gmail. Posting through the API is paid per use.",
     handleMax: 15,
     bioMax: 160,
+    threads: true,
     media: { maxItems: 4, imageTypes: COMMON_IMAGES, videoTypes: [], maxImageBytes: 5 * MB, maxVideoBytes: 0, mixed: false },
   },
   {
@@ -126,6 +130,7 @@ export const PLATFORMS: Platform[] = [
     signupTip: "Threads signs in with the project's Instagram account, so set that up first.",
     handleMax: 30,
     bioMax: 150,
+    threads: true,
     media: { maxItems: 20, imageTypes: JPEG_PNG, videoTypes: MP4, maxImageBytes: 8 * MB, maxVideoBytes: MAX_UPLOAD_BYTES, mixed: true },
   },
   {
@@ -205,17 +210,35 @@ export function postLength(platform: Platform, text: string): number {
 
 export type MediaInfo = { mime: string; size: number };
 
+/** How a thread goes out on a platform: one text per post. Non-thread platforms get one joined post. */
+export function threadTexts(platform: Platform, first: string, parts: string[]): string[] {
+  const rest = parts.map((p) => p.trim()).filter(Boolean);
+  if (rest.length === 0) return [first];
+  return platform.threads ? [first, ...rest] : [[first, ...rest].filter(Boolean).join("\n\n")];
+}
+
 const fmtMB = (bytes: number) => `${Math.round((bytes / MB) * 10) / 10} MB`;
 
 /**
  * Everything wrong with sending this text and media to this platform, in plain English.
  * Shared by the composer, the server action and the publisher so they always agree.
  */
-export function postProblems(platform: Platform, text: string, media: MediaInfo[]): string[] {
+export function postProblems(platform: Platform, text: string, media: MediaInfo[], parts: string[] = []): string[] {
   const problems: string[] = [];
   const r = platform.media;
-  const length = postLength(platform, text);
-  if (length > platform.maxLength) problems.push(`${length - platform.maxLength} characters too long`);
+  const texts = threadTexts(platform, text, parts);
+  if (texts.length > 1) {
+    texts.forEach((t, i) => {
+      const over = postLength(platform, t) - platform.maxLength;
+      if (over > 0) problems.push(i === 0 ? `${over} characters too long` : `thread part ${i + 1} is ${over} characters too long`);
+      if (i > 0 && !t.trim()) problems.push(`thread part ${i + 1} is empty`);
+    });
+    text = texts[0];
+  } else {
+    text = texts[0];
+    const length = postLength(platform, text);
+    if (length > platform.maxLength) problems.push(`${length - platform.maxLength} characters too long${parts.length ? " (thread parts are joined on this platform)" : ""}`);
+  }
   if (!text.trim() && media.length === 0) problems.push("nothing to post");
   if (r.requiresMedia && media.length === 0) problems.push(r.imageTypes.length ? "needs an image or video" : "needs a video");
   if (r.requiresText && !text.trim()) problems.push("needs text (the first line becomes the title)");

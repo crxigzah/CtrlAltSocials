@@ -1,5 +1,5 @@
 import "server-only";
-import { PlatformError, readError, requireEnv, type MediaFile, type OAuthAdapter } from "./shared";
+import { partialThreadNote, PlatformError, readError, requireEnv, type MediaFile, type OAuthAdapter } from "./shared";
 
 // Threads (Meta). Sign in with the project's Instagram-linked Threads account.
 // Long-lived tokens last 60 days and are refreshed automatically when a post goes
@@ -73,7 +73,7 @@ export const threads: OAuthAdapter<ThreadsCredentials> = {
     };
   },
 
-  async publish(c, text, media) {
+  async publish(c, text, media, thread = []) {
     const refreshed = await refreshIfDue(c);
     const creds = refreshed ?? c;
     const api = (path: string, params: Record<string, string>) =>
@@ -118,6 +118,18 @@ export const threads: OAuthAdapter<ThreadsCredentials> = {
       if (res.ok) url = ((await res.json()) as { permalink?: string }).permalink ?? null;
     } catch {
       // The post is live either way; a missing link isn't worth failing over.
+    }
+    // Thread: each further part is a text reply to the previous post.
+    let previous = postId;
+    for (const [i, part] of thread.entries()) {
+      try {
+        previous = (await getJson<{ id: string }>(
+          await api(`${creds.userId}/threads`, { media_type: "TEXT", text: part, reply_to_id: previous, auto_publish_text: "true" }),
+          `part ${i + 2}`,
+        )).id;
+      } catch (err) {
+        return { url, remoteId: postId, credentials: refreshed ?? undefined, note: partialThreadNote(i + 1, thread.length + 1, err) };
+      }
     }
     return { url, remoteId: postId, credentials: refreshed ?? undefined };
   },

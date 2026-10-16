@@ -13,6 +13,8 @@ export type Workspace = {
   avatar_url: string | null;
   timezone: string;
   alert_webhook: string | null;
+  utm_enabled: boolean;
+  utm_campaign: string | null;
   created_at: string;
 };
 
@@ -34,6 +36,7 @@ export type Post = {
   body: string;
   scheduled_at: string;
   status: PostStatus;
+  thread_parts: string[];
   claimed_at: string | null;
   created_at: string;
 };

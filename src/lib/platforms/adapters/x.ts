@@ -1,5 +1,5 @@
 import "server-only";
-import { PlatformError, readError, requireEnv, type OAuthAdapter } from "./shared";
+import { partialThreadNote, PlatformError, readError, requireEnv, type OAuthAdapter } from "./shared";
 
 // X (Twitter) API v2 with OAuth 2.0 + PKCE. Access tokens last two hours; the refresh
 // token (from offline.access) is single-use and rotates on every refresh, so the new
@@ -63,7 +63,7 @@ export const x: OAuthAdapter<XCredentials> = {
     };
   },
 
-  async publish(c, text, media) {
+  async publish(c, text, media, thread = []) {
     const refreshed =
       c.expiresAt - Date.now() < 5 * 60 * 1000
         ? { ...c, ...(await token({ grant_type: "refresh_token", refresh_token: c.refreshToken })) }
@@ -99,7 +99,24 @@ export const x: OAuthAdapter<XCredentials> = {
     });
     if (!res.ok) throw keepToken(new PlatformError(`X rejected the post: ${await readError(res)}`));
     const { data } = (await res.json()) as { data: { id: string } };
-    return { url: `https://x.com/${creds.username}/status/${data.id}`, remoteId: data.id, credentials: refreshed ?? undefined };
+    const url = `https://x.com/${creds.username}/status/${data.id}`;
+
+    // Thread: each further part replies to the previous one.
+    let previous = data.id;
+    for (const [i, part] of thread.entries()) {
+      const reply = await fetch(`${API}/tweets`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${creds.accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ text: part, reply: { in_reply_to_tweet_id: previous } }),
+        cache: "no-store",
+      });
+      if (!reply.ok) {
+        const err = new PlatformError(`X rejected part ${i + 2}: ${await readError(reply)}`);
+        return { url, remoteId: data.id, credentials: refreshed ?? undefined, note: partialThreadNote(i + 1, thread.length + 1, err) };
+      }
+      previous = ((await reply.json()) as { data: { id: string } }).data.id;
+    }
+    return { url, remoteId: data.id, credentials: refreshed ?? undefined };
   },
 
   async metrics(c, id) {

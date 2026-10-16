@@ -1,6 +1,6 @@
 import "server-only";
 import { fetchLinkPreview, fetchPreviewImage, firstUrl } from "@/lib/link-preview";
-import { PlatformError, readError, type FormAdapter, type MediaFile } from "./shared";
+import { partialThreadNote, PlatformError, readError, type FormAdapter, type MediaFile, type PublishOptions } from "./shared";
 
 type BlueskyCredentials = { identifier: string; appPassword: string; service: string };
 
@@ -21,13 +21,14 @@ async function blueskySession(c: BlueskyCredentials) {
 const encoder = new TextEncoder();
 
 /** Links and hashtags only become clickable on Bluesky when sent as facets with UTF-8 byte offsets. */
-export function blueskyFacets(text: string) {
+export function blueskyFacets(text: string, tagLink: (url: string) => string = (u) => u) {
   const facets: object[] = [];
   const byteIndex = (charIndex: number) => encoder.encode(text.slice(0, charIndex)).length;
   for (const m of text.matchAll(/https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/g)) {
     facets.push({
       index: { byteStart: byteIndex(m.index!), byteEnd: byteIndex(m.index! + m[0].length) },
-      features: [{ $type: "app.bsky.richtext.facet#link", uri: m[0] }],
+      // The visible text stays as written; only the link target carries tracking tags.
+      features: [{ $type: "app.bsky.richtext.facet#link", uri: tagLink(m[0]) }],
     });
   }
   for (const m of text.matchAll(/(^|\s)#([\p{L}\p{N}_]{1,64})/gu)) {
@@ -55,7 +56,7 @@ async function uploadBlob(service: string, accessJwt: string, bytes: Buffer, mim
  * Bluesky doesn't build link cards itself: without this a link is just text.
  * Uses the first link's Open Graph tags; any failure just means no card.
  */
-async function blueskyLinkCard(service: string, accessJwt: string, text: string) {
+async function blueskyLinkCard(service: string, accessJwt: string, text: string, tagLink: (url: string) => string = (u) => u) {
   const url = firstUrl(text);
   const preview = url ? await fetchLinkPreview(url) : null;
   if (!preview) return undefined;
@@ -63,7 +64,7 @@ async function blueskyLinkCard(service: string, accessJwt: string, text: string)
   const thumb = image ? await uploadBlob(service, accessJwt, image.bytes, image.mime).catch(() => undefined) : undefined;
   return {
     $type: "app.bsky.embed.external",
-    external: { uri: preview.url, title: preview.title, description: preview.description, ...(thumb ? { thumb } : {}) },
+    external: { uri: tagLink(preview.url), title: preview.title, description: preview.description, ...(thumb ? { thumb } : {}) },
   };
 }
 
@@ -89,32 +90,49 @@ export const bluesky: FormAdapter<BlueskyCredentials> = {
     const session = await blueskySession(credentials);
     return { credentials, label: `@${session.handle}`, remoteId: session.did };
   },
-  async publish(c, text, media) {
+  async publish(c, text, media, thread = [], options: PublishOptions = {}) {
     const session = await blueskySession(c);
-    const facets = blueskyFacets(text);
+    const tagLink = options.tagLink ?? ((u: string) => u);
+    type Ref = { uri: string; cid: string };
+    const create = async (body: string, embed: unknown, reply?: { root: Ref; parent: Ref }) => {
+      const facets = blueskyFacets(body, tagLink);
+      const res = await fetch(`${c.service}/xrpc/com.atproto.repo.createRecord`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.accessJwt}` },
+        body: JSON.stringify({
+          repo: session.did,
+          collection: "app.bsky.feed.post",
+          record: {
+            $type: "app.bsky.feed.post",
+            text: body,
+            createdAt: new Date().toISOString(),
+            ...(facets.length ? { facets } : {}),
+            ...(embed ? { embed } : {}),
+            ...(reply ? { reply } : {}),
+          },
+        }),
+        cache: "no-store",
+      });
+      if (!res.ok) throw new PlatformError(`Bluesky rejected the post: ${await readError(res)}`);
+      return (await res.json()) as Ref;
+    };
+
     const embed = media.length
       ? await blueskyImages(c.service, session.accessJwt, media)
-      : await blueskyLinkCard(c.service, session.accessJwt, text);
-    const res = await fetch(`${c.service}/xrpc/com.atproto.repo.createRecord`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.accessJwt}` },
-      body: JSON.stringify({
-        repo: session.did,
-        collection: "app.bsky.feed.post",
-        record: {
-          $type: "app.bsky.feed.post",
-          text,
-          createdAt: new Date().toISOString(),
-          ...(facets.length ? { facets } : {}),
-          ...(embed ? { embed } : {}),
-        },
-      }),
-      cache: "no-store",
-    });
-    if (!res.ok) throw new PlatformError(`Bluesky rejected the post: ${await readError(res)}`);
-    const { uri } = (await res.json()) as { uri: string };
-    const rkey = uri.split("/").pop();
-    return { url: `https://bsky.app/profile/${session.handle}/post/${rkey}`, remoteId: uri };
+      : await blueskyLinkCard(c.service, session.accessJwt, text, tagLink);
+    const root = await create(text, embed);
+    const url = `https://bsky.app/profile/${session.handle}/post/${root.uri.split("/").pop()}`;
+
+    // Each further part replies to the one before it, all under the same root.
+    let parent = root;
+    for (const [i, part] of thread.entries()) {
+      try {
+        parent = await create(part, await blueskyLinkCard(c.service, session.accessJwt, part, tagLink), { root, parent });
+      } catch (err) {
+        return { url, remoteId: root.uri, note: partialThreadNote(i + 1, thread.length + 1, err) };
+      }
+    }
+    return { url, remoteId: root.uri };
   },
   async metrics(_c, uri) {
     // Bluesky's public AppView serves post counts without signing in.

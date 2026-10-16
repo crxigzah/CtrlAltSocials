@@ -15,6 +15,7 @@ export type Draft = {
   /** Status of the post being edited: a saved draft or a scheduled post. */
   status: "draft" | "scheduled" | null;
   body: string;
+  threadParts: string[];
   accountIds: string[];
   overrides: Record<string, string>;
   media: { path: string; alt: string | null; mime: string; size: number; preview: string }[];
@@ -64,6 +65,8 @@ function localInputValue(date: Date) {
 export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled, snippets = [], nextSlot = null }: Props) {
   const editing = Boolean(draft?.postId);
   const [body, setBody] = useState(draft?.body ?? "");
+  // Further thread parts after the main text.
+  const [parts, setParts] = useState<string[]>(draft?.threadParts ?? []);
   // Everything's ticked to start with; accounts with a problem show a "check" badge instead of silently dropping out.
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(draft ? draft.accountIds.filter((id) => accounts.some((a) => a.id === id)) : accounts.map((a) => a.id)),
@@ -128,11 +131,11 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
         .map((a) => {
           const platform = getPlatform(a.platform)!;
           const text = overrides[a.id] ?? body;
-          return { account: a, platform, remaining: platform.maxLength - postLength(platform, text), problems: postProblems(platform, text, mediaInfo) };
+          return { account: a, platform, remaining: platform.maxLength - postLength(platform, text), problems: postProblems(platform, text, mediaInfo, parts) };
         }),
     // mediaInfo is derived from attachments; depend on that instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accounts, selected, body, attachments, overrides],
+    [accounts, selected, body, attachments, overrides, parts],
   );
   // Until something's been written or attached, "nothing to post" is just noise.
   const pristine = !body.trim() && attachments.length === 0 && Object.values(overrides).every((t) => !t.trim());
@@ -205,6 +208,25 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
         className="input resize-y text-base"
       />
 
+      {parts.map((part, i) => (
+        <div key={i} className="relative border-l-2 border-accent/40 pl-3">
+          <div className="mb-1 flex items-center gap-2 text-xs text-muted">
+            Thread part {i + 2}
+            <button type="button" onClick={() => setParts((p) => p.filter((_, j) => j !== i))} className="ml-auto hover:text-bad">
+              Remove
+            </button>
+          </div>
+          <textarea
+            name="thread_part"
+            value={part}
+            onChange={(e) => setParts((p) => p.map((x, j) => (j === i ? e.target.value : x)))}
+            rows={3}
+            maxLength={5000}
+            className="input resize-y"
+          />
+        </div>
+      ))}
+
       {attachments.length > 0 && (
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {attachments.map((a, i) => (
@@ -254,6 +276,16 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
           <button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={() => fileInput.current?.click()}>
             + Image or video
           </button>
+          {parts.length < 25 && (
+            <button
+              type="button"
+              className="btn-ghost px-3 py-1.5 text-xs"
+              title="X, Bluesky and Threads post these as replies; other platforms get them joined into one post"
+              onClick={() => setParts((p) => [...p, ""])}
+            >
+              + Add to thread
+            </button>
+          )}
           {snippets.map((sn) => (
             <button
               key={sn.id}

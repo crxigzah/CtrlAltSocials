@@ -3,7 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptJson, encryptJson } from "@/lib/crypto";
 import { describeError, getAdapter, isNetworkError } from "@/lib/platforms/adapters";
 import type { MediaFile } from "@/lib/platforms/adapters/shared";
-import { getPlatform, postProblems } from "@/lib/platforms/catalog";
+import { getPlatform, postProblems, threadTexts, type Platform } from "@/lib/platforms/catalog";
+import { tagLinks } from "@/lib/utm";
 import type { Post, PostStatus } from "@/lib/types";
 
 type TargetRow = {
@@ -44,8 +45,10 @@ export async function publishPost(supabase: SupabaseClient, post: Post): Promise
 
   const targets = data ?? [];
   const media = await loadMedia(supabase, post.id);
+  const { data: ws } = await supabase.from("workspaces").select("website, utm_enabled, utm_campaign").eq("id", post.workspace_id).single();
+  const utm = ws?.utm_enabled && ws.website ? { website: ws.website as string, campaign: ws.utm_campaign as string | null } : null;
   for (const target of targets.filter((t) => t.status === "pending")) {
-    const { accountError, newCredentials, ...update } = await sendOne(target, target.body ?? post.body, media);
+    const { accountError, newCredentials, ...update } = await sendOne(target, target.body ?? post.body, media, post.thread_parts ?? [], utm);
     await supabase.from("post_targets").update(update).eq("id", target.id);
     if (newCredentials !== undefined && target.account) {
       // A token was refreshed on the way; losing it would lock the account out.
@@ -95,7 +98,22 @@ async function loadMedia(supabase: SupabaseClient, postId: string): Promise<Medi
   return files;
 }
 
-async function sendOne(target: TargetRow, body: string, media: MediaFile[]) {
+type Utm = { website: string; campaign: string | null } | null;
+
+/**
+ * Tracking tags for this platform's copy of the post. Bluesky gets them on the link
+ * target only; elsewhere they go in the text, unless the longer links would push it
+ * over the platform's limit, in which case the post goes out untagged.
+ */
+function withTracking(platform: Platform, body: string, parts: string[], media: MediaFile[], utm: Utm) {
+  if (!utm) return { body, parts, options: {} };
+  const tag = (t: string) => tagLinks(t, { website: utm.website, platform: platform.id, campaign: utm.campaign });
+  if (platform.id === "bluesky") return { body, parts, options: { tagLink: tag } };
+  const tagged = { body: tag(body), parts: parts.map(tag) };
+  return postProblems(platform, tagged.body, media, tagged.parts).length ? { body, parts, options: {} } : { ...tagged, options: {} };
+}
+
+async function sendOne(target: TargetRow, rawBody: string, media: MediaFile[], rawParts: string[], utm: Utm) {
   const fail = (error: string, accountError = false, newCredentials?: unknown) =>
     ({ status: "failed" as const, error, sent_at: null, remote_url: null, remote_id: null, accountError, newCredentials });
 
@@ -104,11 +122,14 @@ async function sendOne(target: TargetRow, body: string, media: MediaFile[]) {
   const platform = getPlatform(account.platform);
   const adapter = getAdapter(account.platform);
   if (!platform || !adapter) return fail(`Posting to ${platform?.name ?? account.platform} isn't supported yet.`);
-  const problems = postProblems(platform, body, media);
+  const problems = postProblems(platform, rawBody, media, rawParts);
   if (problems.length) return fail(`Can't post this to ${platform.name}: ${problems.join(", ")}.`);
 
+  // Thread platforms get the parts as replies; everywhere else they're joined into one post.
+  const { body, parts, options } = withTracking(platform, rawBody, rawParts, media, utm);
+  const [first, ...rest] = threadTexts(platform, body, parts);
   try {
-    const result = await adapter.publish(decryptJson(account.credentials), body, media);
+    const result = await adapter.publish(decryptJson(account.credentials), first, media, rest, options);
     return {
       status: "sent" as const,
       // A note on a sent post (e.g. "posted as private") rides in the error column; the UI shows it as a warning.

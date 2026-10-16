@@ -75,6 +75,17 @@ export async function setAlertWebhook(slug: string, formData: FormData) {
   back(slug, { saved: "Alerts on. A test message was sent to the channel." });
 }
 
+export async function setLinkTracking(slug: string, formData: FormData) {
+  const ws = await getWorkspace(slug);
+  const enabled = formData.get("utm_enabled") === "on";
+  if (enabled && !ws.website) back(slug, { error: "Add the project's website on the Brand kit tab first; only links to it get tagged." });
+  const campaign = String(formData.get("utm_campaign") ?? "").trim().replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || null;
+  const supabase = await createClient();
+  await supabase.from("workspaces").update({ utm_enabled: enabled, utm_campaign: campaign }).eq("id", ws.id);
+  revalidatePath(`/w/${slug}`, "layout");
+  back(slug, { saved: enabled ? "Link tracking on." : "Link tracking off." });
+}
+
 export async function addSnippet(slug: string, formData: FormData) {
   const ws = await getWorkspace(slug);
   const name = String(formData.get("name") ?? "").trim().slice(0, 60);
