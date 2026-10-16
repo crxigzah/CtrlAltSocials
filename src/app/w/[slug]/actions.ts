@@ -11,6 +11,7 @@ import { getPlatform, postProblems, UPLOAD_TYPES, type MediaInfo } from "@/lib/p
 import { publishPost, retryPost } from "@/lib/publisher";
 import { createClient } from "@/lib/supabase/server";
 import type { Post } from "@/lib/types";
+import { nextFreeSlot } from "@/lib/slots";
 import { tailorPost } from "@/lib/tailor";
 import { getWorkspace } from "@/lib/workspace";
 
@@ -151,7 +152,8 @@ export async function createPost(slug: string, formData: FormData) {
   const when = String(formData.get("when") ?? "now");
   const scheduledRaw = String(formData.get("scheduled_at") ?? "");
 
-  if (accountIds.length === 0) back(path, { error: "Pick at least one account to post to." });
+  const isDraft = when === "draft";
+  if (accountIds.length === 0 && !isDraft) back(path, { error: "Pick at least one account to post to." });
 
   let scheduledAt = new Date();
   if (when === "later") {
@@ -171,6 +173,12 @@ export async function createPost(slug: string, formData: FormData) {
   }
   if (!body && media.length === 0 && overrides.size === 0) back(path, { error: "Write something or attach a file first." });
 
+  if (when === "queue") {
+    const slot = await nextQueueSlot(supabase, ws.id, ws.timezone, optional(formData.get("post_id")));
+    if (!slot) back(path, { error: "No free posting slot. Add some on the Settings tab." });
+    scheduledAt = slot!;
+  }
+
   // Only this workspace's accounts can be targeted, whatever the form sent.
   const { data: accounts } = await supabase
     .from("accounts")
@@ -179,7 +187,8 @@ export async function createPost(slug: string, formData: FormData) {
     .in("id", accountIds);
   if (!accounts || accounts.length !== accountIds.length) back(path, { error: "One of those accounts isn't in this project." });
 
-  for (const a of accounts!) {
+  // Drafts can be half-finished; the checks run when they're scheduled or posted.
+  for (const a of isDraft ? [] : accounts!) {
     const platform = getPlatform(a.platform)!;
     const problems = postProblems(platform, overrides.get(a.id) ?? body, media);
     if (problems.length) back(path, { error: `${a.label} (${platform.name}): ${problems.join(", ")}.` });
@@ -188,7 +197,7 @@ export async function createPost(slug: string, formData: FormData) {
   const fields = {
     body,
     scheduled_at: scheduledAt.toISOString(),
-    status: when === "now" ? "publishing" : "scheduled",
+    status: when === "now" ? "publishing" : isDraft ? "draft" : "scheduled",
     claimed_at: when === "now" ? new Date().toISOString() : null,
   };
   const editId = optional(formData.get("post_id"));
@@ -203,10 +212,10 @@ export async function createPost(slug: string, formData: FormData) {
       .select("post_media(path)")
       .eq("id", editId)
       .eq("workspace_id", ws.id)
-      .eq("status", "scheduled")
+      .in("status", ["scheduled", "draft"])
       .maybeSingle();
     const { data: updated } = before
-      ? await supabase.from("posts").update(fields).eq("id", editId).eq("status", "scheduled").select().maybeSingle<Post>()
+      ? await supabase.from("posts").update(fields).eq("id", editId).in("status", ["scheduled", "draft"]).select().maybeSingle<Post>()
       : { data: null };
     if (!updated) return back(path, { error: "That post has already been sent or cancelled, so it can't be edited." });
     post = updated;
@@ -239,7 +248,21 @@ export async function createPost(slug: string, formData: FormData) {
     back(path, { posted: status });
   }
   revalidatePath(path);
-  back(path, { scheduled: editId ? "updated" : "1" });
+  if (isDraft) back(path, { scheduled: "draft" });
+  back(path, { scheduled: when === "queue" ? `queued:${scheduledAt.toISOString()}` : editId ? "updated" : "1" });
+}
+
+/** Next posting slot not already taken by another scheduled post in this project (ignoring the one being edited). */
+async function nextQueueSlot(supabase: Awaited<ReturnType<typeof createClient>>, workspaceId: string, timezone: string, editingId: string | null) {
+  const [{ data: slots }, { data: taken }] = await Promise.all([
+    supabase.from("posting_slots").select("weekday, minute_of_day").eq("workspace_id", workspaceId),
+    supabase.from("posts").select("id, scheduled_at").eq("workspace_id", workspaceId).eq("status", "scheduled").gte("scheduled_at", new Date().toISOString()),
+  ]);
+  return nextFreeSlot(
+    slots ?? [],
+    timezone,
+    (taken ?? []).filter((p) => p.id !== editingId).map((p) => new Date(p.scheduled_at)),
+  );
 }
 
 export async function retryFailed(slug: string, postId: string) {
@@ -262,7 +285,7 @@ export async function cancelPost(slug: string, postId: string) {
     .delete()
     .eq("id", postId)
     .eq("workspace_id", ws.id)
-    .eq("status", "scheduled")
+    .in("status", ["scheduled", "draft"])
     .select("id");
   const paths = deleted?.length ? (media ?? []).map((m) => m.path) : [];
   await removeUnreferenced(supabase, paths);

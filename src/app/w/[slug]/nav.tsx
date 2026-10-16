@@ -12,6 +12,7 @@ export function WorkspaceNav({ slug }: { slug: string }) {
     { href: `${base}/accounts`, label: "Accounts" },
     { href: `${base}/setup`, label: "Setup checklist" },
     { href: `${base}/settings`, label: "Brand kit" },
+    { href: `${base}/preferences`, label: "Settings" },
   ];
   return (
     <nav className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4">

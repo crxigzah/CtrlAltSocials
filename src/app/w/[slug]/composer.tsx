@@ -12,6 +12,8 @@ import { discardUpload, tailorForAccounts } from "./actions";
 /** A post to load into the composer: editing a scheduled one (postId set) or duplicating an old one. */
 export type Draft = {
   postId: string | null;
+  /** Status of the post being edited: a saved draft or a scheduled post. */
+  status: "draft" | "scheduled" | null;
   body: string;
   accountIds: string[];
   overrides: Record<string, string>;
@@ -27,7 +29,13 @@ type Props = {
   draft?: Draft;
   /** Whether the server has an Anthropic API key, so "Tailor with AI" can work. */
   aiEnabled?: boolean;
+  snippets?: { id: string; name: string; body: string }[];
+  /** Preview of the project's next free posting slot, or null when it has none. */
+  nextSlot?: string | null;
 };
+
+type When = "now" | "later" | "queue" | "draft";
+const WHEN_LABEL: Record<When, string> = { now: "Post now", later: "Schedule", queue: "Add to queue", draft: "Save draft" };
 
 type Attachment = {
   key: string;
@@ -53,14 +61,26 @@ function localInputValue(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled }: Props) {
+export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled, snippets = [], nextSlot = null }: Props) {
   const editing = Boolean(draft?.postId);
   const [body, setBody] = useState(draft?.body ?? "");
   // Everything's ticked to start with; accounts with a problem show a "check" badge instead of silently dropping out.
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(draft ? draft.accountIds.filter((id) => accounts.some((a) => a.id === id)) : accounts.map((a) => a.id)),
   );
-  const [when, setWhen] = useState<"now" | "later">(editing ? "later" : "now");
+  const [when, setWhen] = useState<When>(draft?.status === "draft" ? "draft" : editing ? "later" : "now");
+  const textArea = useRef<HTMLTextAreaElement>(null);
+
+  /** Inserts a snippet at the cursor (or the end), on its own line. */
+  function insertSnippet(text: string) {
+    const el = textArea.current;
+    const at = el ? el.selectionStart : body.length;
+    const before = body.slice(0, at);
+    const after = body.slice(at);
+    const glue = before && !before.endsWith("\n") ? "\n" : "";
+    setBody(`${before}${glue}${text}${after}`);
+    requestAnimationFrame(() => el?.focus());
+  }
   // Filled in once in the browser: the server doesn't know the viewer's timezone.
   const [localTime, setLocalTime] = useState("");
   useEffect(() => {
@@ -166,12 +186,16 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
   }
 
   const hasText = body.trim() || Object.values(overrides).some((t) => t.trim());
-  const canSubmit = (hasText || ready.length) && selected.size > 0 && blocked.length === 0 && !uploading && !attachments.some((a) => a.error);
+  const canSubmit =
+    when === "draft"
+      ? Boolean(hasText || ready.length) && !uploading
+      : Boolean(hasText || ready.length) && selected.size > 0 && blocked.length === 0 && !uploading && !attachments.some((a) => a.error) && (when !== "queue" || nextSlot !== null);
 
   return (
     <form action={action} className="card space-y-4">
       {draft?.postId && <input type="hidden" name="post_id" value={draft.postId} />}
       <textarea
+        ref={textArea}
         name="body"
         value={body}
         onChange={(e) => setBody(e.target.value)}
@@ -226,9 +250,22 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
           className="hidden"
           onChange={(e) => addFiles(e.target.files)}
         />
-        <button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={() => fileInput.current?.click()}>
-          + Image or video
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={() => fileInput.current?.click()}>
+            + Image or video
+          </button>
+          {snippets.map((sn) => (
+            <button
+              key={sn.id}
+              type="button"
+              title={sn.body}
+              onClick={() => insertSnippet(sn.body)}
+              className="rounded-md border border-dashed border-line px-2.5 py-1 text-xs text-muted hover:border-accent hover:text-fg"
+            >
+              + {sn.name}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div>
@@ -342,14 +379,14 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
 
       <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
         <div className="flex rounded-lg border border-line p-0.5 text-sm">
-          {(["now", "later"] as const).map((w) => (
+          {(["now", "queue", "later", "draft"] as const).map((w) => (
             <button
               key={w}
               type="button"
               onClick={() => setWhen(w)}
               className={`rounded-md px-3 py-1 ${when === w ? "bg-raised text-fg" : "text-muted"}`}
             >
-              {w === "now" ? "Post now" : "Schedule"}
+              {WHEN_LABEL[w]}
             </button>
           ))}
         </div>
@@ -361,18 +398,28 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
             <input type="hidden" name="scheduled_at" value={localTime ? new Date(localTime).toISOString() : ""} />
           </>
         )}
+        {when === "queue" && (
+          <span className="text-xs text-muted">
+            {nextSlot ? <>Next free slot: {nextSlot}</> : <>No posting slots yet. <a href={`/w/${slug}/preferences`} className="link">Set some up</a></>}
+          </span>
+        )}
+        {when === "draft" && <span className="text-xs text-muted">Saved for later; nothing is posted.</span>}
         <SubmitButton
           className="btn-primary ml-auto"
-          pendingText={when === "now" ? "Posting…" : "Scheduling…"}
+          pendingText={when === "now" ? "Posting…" : "Saving…"}
           disabled={!canSubmit}
         >
           {uploading
             ? "Uploading…"
             : when === "now"
               ? `Post to ${selected.size}`
-              : editing
-                ? "Save changes"
-                : `Schedule for ${selected.size}`}
+              : when === "draft"
+                ? "Save draft"
+                : when === "queue"
+                  ? `Queue for ${selected.size}`
+                  : editing && draft?.status === "scheduled"
+                    ? "Save changes"
+                    : `Schedule for ${selected.size}`}
         </SubmitButton>
       </div>
     </form>

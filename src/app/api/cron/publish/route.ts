@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendFailureAlert } from "@/lib/alerts";
 import { publishPost } from "@/lib/publisher";
 import type { Post } from "@/lib/types";
 
@@ -39,6 +40,8 @@ async function run(request: NextRequest) {
       await supabase.from("posts").update({ status: "failed" }).eq("id", post.id);
       results[post.id] = "failed";
     }
+    // Scheduled posts go out unattended, so problems get pushed to the project's alert channel.
+    await sendFailureAlert(supabase, post, results[post.id] as Post["status"]);
   }
   return NextResponse.json({ published: results });
 }

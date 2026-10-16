@@ -37,6 +37,7 @@ export default async function CalendarPage({
     .from("posts")
     .select("id, body, status, scheduled_at, post_media(id), post_targets(account:accounts(platform))")
     .eq("workspace_id", ws.id)
+    .neq("status", "draft")
     .gte("scheduled_at", from)
     .lt("scheduled_at", to)
     .order("scheduled_at");

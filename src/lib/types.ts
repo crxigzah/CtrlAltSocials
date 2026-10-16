@@ -11,6 +11,8 @@ export type Workspace = {
   website: string | null;
   signup_email: string | null;
   avatar_url: string | null;
+  timezone: string;
+  alert_webhook: string | null;
   created_at: string;
 };
 
@@ -24,7 +26,7 @@ export type Account = {
   created_at: string;
 };
 
-export type PostStatus = "scheduled" | "publishing" | "done" | "partial" | "failed";
+export type PostStatus = "draft" | "scheduled" | "publishing" | "done" | "partial" | "failed";
 
 export type Post = {
   id: string;

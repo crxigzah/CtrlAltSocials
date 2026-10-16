@@ -16,6 +16,7 @@ export type CalendarPost = {
 };
 
 const STATUS_CLS: Record<PostStatus, string> = {
+  draft: "border-line bg-raised",
   scheduled: "border-accent/50 bg-accent/10",
   publishing: "border-warn/50 bg-warn/10",
   done: "border-ok/40 bg-ok/5",

@@ -3,7 +3,7 @@ import { PlatformError, readError, type FormAdapter } from "./shared";
 
 type DiscordCredentials = { webhookUrl: string; guildId?: string };
 
-function parseWebhook(raw: string): string {
+export function parseWebhook(raw: string): string {
   let url: URL;
   try {
     url = new URL(raw.trim());

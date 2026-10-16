@@ -11,6 +11,9 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Posting:** Bluesky (app password), Discord (channel webhook), and Threads, X, Instagram, Facebook Pages, YouTube, TikTok and Reddit (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
 - **Images and video:** attach up to 20 files with alt text and drag-free reordering. The composer checks each platform's rules (count, file type, size, mixing images and video) before you can post. Files upload straight to a private Supabase Storage bucket and platforms get short-lived signed links.
 - **Per-account wording:** give X a shorter version or Instagram extra hashtags without writing separate posts.
+- **Posting slots and queue:** set regular times per project (e.g. weekdays 12:00 and 18:00, in the project's timezone) and "Add to queue" drops a post into the next free one.
+- **Drafts and snippets:** save half-finished posts, and keep hashtag sets or sign-offs to insert with one click.
+- **Failure alerts:** a Discord webhook per project gets a message, with the reason, whenever a scheduled post fails or only partly goes out.
 - **Calendar:** a month view per project, plus a "Coming up" list across every project on the home page.
 - **Edit and post again:** change a scheduled post right up until it goes out, or copy any earlier post (text, attachments and per-account wording) into the composer.
 - **Tailor with AI (optional):** with `ANTHROPIC_API_KEY` set, one click has Claude write a version of the post for each ticked account (shorter for X, "link in bio" and hashtags for Instagram, a title line for Reddit and YouTube) into the per-account boxes, for you to check before posting.

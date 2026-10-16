@@ -3,6 +3,7 @@ import { PlatformIcon } from "@/components/platform-icon";
 import { LIVE_PLATFORMS } from "@/lib/platforms/catalog";
 import { createClient } from "@/lib/supabase/server";
 import type { Account, Post, PostTarget } from "@/lib/types";
+import { nextFreeSlot } from "@/lib/slots";
 import { aiEnabled } from "@/lib/tailor";
 import { getWorkspace } from "@/lib/workspace";
 import { cancelPost, createPost, retryFailed } from "./actions";
@@ -16,6 +17,7 @@ export const maxDuration = 60;
 type PostRow = Post & { post_media: { id: string; mime: string; alt: string | null; position: number }[]; post_targets: (PostTarget & { account: Pick<Account, "label" | "platform"> | null })[] };
 
 const POST_STATUS: Record<Post["status"], { label: string; cls: string }> = {
+  draft: { label: "Draft", cls: "bg-raised text-muted" },
   scheduled: { label: "Scheduled", cls: "bg-accent/15 text-accent" },
   publishing: { label: "Sending", cls: "bg-warn/15 text-warn" },
   done: { label: "Posted", cls: "bg-ok/15 text-ok" },
@@ -49,7 +51,17 @@ export default async function ComposePage({
 
   const draft = await loadDraft(supabase, ws.id, edit ?? duplicate, Boolean(edit));
   const upcoming = (posts ?? []).filter((p) => p.status === "scheduled").reverse();
-  const history = (posts ?? []).filter((p) => p.status !== "scheduled");
+  const drafts = (posts ?? []).filter((p) => p.status === "draft");
+  const history = (posts ?? []).filter((p) => p.status !== "scheduled" && p.status !== "draft");
+
+  const [{ data: snippets }, { data: slots }] = await Promise.all([
+    supabase.from("snippets").select("id, name, body").eq("workspace_id", ws.id).order("created_at"),
+    supabase.from("posting_slots").select("weekday, minute_of_day").eq("workspace_id", ws.id),
+  ]);
+  const takenSlots = upcoming.filter((p) => p.id !== draft?.postId).map((p) => new Date(p.scheduled_at));
+  const next = nextFreeSlot(slots ?? [], ws.timezone, takenSlots);
+  const fmt = (d: Date) => d.toLocaleString("en-GB", { timeZone: ws.timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const queuedAt = scheduled?.startsWith("queued:") ? new Date(scheduled.slice(7)) : null;
 
   return (
     <div className="space-y-8">
@@ -58,11 +70,15 @@ export default async function ComposePage({
       {posted === "partial" && <p className="notice-error">Posted to some accounts but not all. See the details below.</p>}
       {posted === "failed" && <p className="notice-error">The post didn&apos;t go out. See the details below.</p>}
       {scheduled === "1" && <p className="notice-ok">Scheduled.</p>}
+      {queuedAt && <p className="notice-ok">Added to the queue for {fmt(queuedAt)}.</p>}
+      {scheduled === "draft" && <p className="notice-ok">Draft saved.</p>}
       {scheduled === "updated" && <p className="notice-ok">Changes saved.</p>}
       {edit && !draft && <p className="notice-error">That post has already gone out or been cancelled, so it can&apos;t be edited.</p>}
       {draft && (
         <p className="flex items-center gap-3 text-sm text-muted">
-          {draft.postId ? "Editing a scheduled post." : "Copied from an earlier post. Change anything you like, then post or schedule it."}
+          {draft.postId
+            ? draft.status === "draft" ? "Editing a draft." : "Editing a scheduled post."
+            : "Copied from an earlier post. Change anything you like, then post or schedule it."}
           <Link href={`/w/${slug}`} className="link">{draft.postId ? "Stop editing" : "Start fresh"}</Link>
         </p>
       )}
@@ -78,11 +94,29 @@ export default async function ComposePage({
           key={draft ? `${draft.postId ?? "copy"}-${edit ?? duplicate}` : "new"}
           draft={draft ?? undefined}
           aiEnabled={aiEnabled()}
+          snippets={snippets ?? []}
+          nextSlot={next ? fmt(next) : null}
           slug={slug}
           workspaceId={ws.id}
           accounts={accounts as Pick<Account, "id" | "platform" | "label" | "status">[]}
           action={createPost.bind(null, slug)}
         />
+      )}
+
+      {drafts.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="font-semibold">Drafts</h2>
+          {drafts.map((p) => (
+            <PostCard key={p.id} post={p}>
+              <span className="flex items-center gap-3">
+                <Link href={`/w/${slug}?edit=${p.id}`} className="text-xs text-accent hover:underline">Open</Link>
+                <form action={cancelPost.bind(null, slug, p.id)}>
+                  <button className="text-xs text-muted hover:text-bad">Delete</button>
+                </form>
+              </span>
+            </PostCard>
+          ))}
+        </section>
       )}
 
       {upcoming.length > 0 && (
@@ -173,7 +207,7 @@ async function loadDraft(
     .select("id, body, scheduled_at, status, post_media(path, alt, mime, size, position), post_targets(account_id, body)")
     .eq("id", postId)
     .eq("workspace_id", workspaceId);
-  if (editing) query = query.eq("status", "scheduled");
+  if (editing) query = query.in("status", ["scheduled", "draft"]);
   const { data } = await query.maybeSingle();
   if (!data) return null;
 
@@ -186,6 +220,7 @@ async function loadDraft(
   const targets = data.post_targets as { account_id: string; body: string | null }[];
   return {
     postId: editing ? data.id : null,
+    status: editing ? (data.status as "draft" | "scheduled") : null,
     body: data.body,
     accountIds: targets.map((t) => t.account_id),
     overrides: Object.fromEntries(targets.filter((t) => t.body !== null).map((t) => [t.account_id, t.body!])),
