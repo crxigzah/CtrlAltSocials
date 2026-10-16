@@ -45,6 +45,8 @@ export function Composer({ slug, workspaceId, accounts, action }: Props) {
   const [when, setWhen] = useState<"now" | "later">("now");
   const [localTime, setLocalTime] = useState(() => localInputValue(new Date(Date.now() + 60 * 60 * 1000)));
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  // Accounts given their own wording; everyone else gets the main text.
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
   const fileInput = useRef<HTMLInputElement>(null);
   // Created on first upload: the browser client only belongs in the browser.
   const supabaseRef = useRef<SupabaseClient | null>(null);
@@ -63,11 +65,12 @@ export function Composer({ slug, workspaceId, accounts, action }: Props) {
         .filter((a) => selected.has(a.id))
         .map((a) => {
           const platform = getPlatform(a.platform)!;
-          return { account: a, platform, remaining: platform.maxLength - postLength(platform, body), problems: postProblems(platform, body, mediaInfo) };
+          const text = overrides[a.id] ?? body;
+          return { account: a, platform, remaining: platform.maxLength - postLength(platform, text), problems: postProblems(platform, text, mediaInfo) };
         }),
     // mediaInfo is derived from attachments; depend on that instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accounts, selected, body, attachments],
+    [accounts, selected, body, attachments, overrides],
   );
   const blocked = checks.filter((c) => c.problems.length);
 
@@ -117,7 +120,8 @@ export function Composer({ slug, workspaceId, accounts, action }: Props) {
     });
   }
 
-  const canSubmit = (body.trim() || ready.length) && selected.size > 0 && blocked.length === 0 && !uploading && !attachments.some((a) => a.error);
+  const hasText = body.trim() || Object.values(overrides).some((t) => t.trim());
+  const canSubmit = (hasText || ready.length) && selected.size > 0 && blocked.length === 0 && !uploading && !attachments.some((a) => a.error);
 
   return (
     <form action={action} className="card space-y-4">
@@ -208,6 +212,53 @@ export function Composer({ slug, workspaceId, accounts, action }: Props) {
           })}
         </div>
       </div>
+
+      {checks.length > 1 && (
+        <details className="group rounded-lg border border-line" open={Object.keys(overrides).length > 0}>
+          <summary className="cursor-pointer list-none px-3 py-2 text-sm text-muted hover:text-fg">
+            Customise the text per account <span className="text-subtle group-open:hidden">▸</span>
+          </summary>
+          <div className="space-y-3 border-t border-line p-3">
+            {checks.map(({ account, platform, remaining }) => {
+              const custom = account.id in overrides;
+              return (
+                <div key={account.id} className="space-y-1.5">
+                  <div className="flex items-center gap-2 text-sm">
+                    <PlatformIcon platform={account.platform} size={18} />
+                    <span>{account.label}</span>
+                    {custom && <span className={`font-mono text-xs ${remaining < 0 ? "text-bad" : "text-subtle"}`}>{remaining}</span>}
+                    <button
+                      type="button"
+                      className="ml-auto text-xs text-accent hover:underline"
+                      onClick={() =>
+                        setOverrides((prev) => {
+                          const next = { ...prev };
+                          if (custom) delete next[account.id];
+                          else next[account.id] = body;
+                          return next;
+                        })
+                      }
+                    >
+                      {custom ? "Use main text" : "Customise"}
+                    </button>
+                  </div>
+                  {custom && (
+                    <textarea
+                      name={`override_${account.id}`}
+                      value={overrides[account.id]}
+                      onChange={(e) => setOverrides((prev) => ({ ...prev, [account.id]: e.target.value }))}
+                      rows={3}
+                      maxLength={5000}
+                      placeholder={`Text for ${platform.name}`}
+                      className="input resize-y"
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
 
       {blocked.length > 0 && (
         <ul className="notice-error space-y-0.5">

@@ -32,11 +32,13 @@ export type Post = {
   body: string;
   scheduled_at: string;
   status: PostStatus;
+  claimed_at: string | null;
   created_at: string;
 };
 
 export type PostTarget = {
   id: string;
+  body: string | null;
   post_id: string;
   account_id: string;
   status: "pending" | "sent" | "failed";

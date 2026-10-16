@@ -6,6 +6,7 @@ import type { Post } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+const TIME_BUDGET_MS = 25_000;
 
 function authorised(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -21,11 +22,16 @@ async function run(request: NextRequest) {
   if (!authorised(request)) return NextResponse.json({ error: "unauthorised" }, { status: 401 });
 
   const supabase = createAdminClient();
-  const { data: posts, error } = await supabase.rpc("claim_due_posts", { max_posts: 20 });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
+  const started = Date.now();
   const results: Record<string, string> = {};
-  for (const post of (posts ?? []) as Post[]) {
+
+  // One post at a time, and stop claiming with time to spare: anything left over is
+  // picked up by the next run rather than claimed and then cut off by the timeout.
+  while (Date.now() - started < TIME_BUDGET_MS) {
+    const { data, error } = await supabase.rpc("claim_due_posts", { max_posts: 1 });
+    if (error) return NextResponse.json({ error: error.message, published: results }, { status: 500 });
+    const post = (data as Post[] | null)?.[0];
+    if (!post) break;
     try {
       results[post.id] = await publishPost(supabase, post);
     } catch (err) {

@@ -8,6 +8,7 @@ import type { Post, PostStatus } from "@/lib/types";
 
 type TargetRow = {
   id: string;
+  body: string | null;
   status: "pending" | "sent" | "failed";
   account: { id: string; platform: string; credentials: string | null; status: string } | null;
 };
@@ -16,10 +17,27 @@ type TargetRow = {
  * Sends a claimed post (status "publishing") to each of its pending targets, records
  * every result, and settles the post's status. Targets already sent are never resent.
  */
+/**
+ * Puts a post's failed targets back in the queue and sends them again. Accounts that
+ * already got the post are left alone. Returns null if the post isn't retryable.
+ */
+export async function retryPost(supabase: SupabaseClient, postId: string): Promise<PostStatus | null> {
+  const { data: post } = await supabase
+    .from("posts")
+    .update({ status: "publishing", claimed_at: new Date().toISOString() })
+    .eq("id", postId)
+    .in("status", ["failed", "partial"])
+    .select()
+    .maybeSingle<Post>();
+  if (!post) return null;
+  await supabase.from("post_targets").update({ status: "pending", error: null }).eq("post_id", postId).eq("status", "failed");
+  return publishPost(supabase, post);
+}
+
 export async function publishPost(supabase: SupabaseClient, post: Post): Promise<PostStatus> {
   const { data, error } = await supabase
     .from("post_targets")
-    .select("id, status, account:accounts(id, platform, credentials, status)")
+    .select("id, status, body, account:accounts(id, platform, credentials, status)")
     .eq("post_id", post.id)
     .returns<TargetRow[]>();
   if (error) throw error;
@@ -27,7 +45,7 @@ export async function publishPost(supabase: SupabaseClient, post: Post): Promise
   const targets = data ?? [];
   const media = await loadMedia(supabase, post.id);
   for (const target of targets.filter((t) => t.status === "pending")) {
-    const { accountError, newCredentials, ...update } = await sendOne(target, post.body, media);
+    const { accountError, newCredentials, ...update } = await sendOne(target, target.body ?? post.body, media);
     await supabase.from("post_targets").update(update).eq("id", target.id);
     if (newCredentials !== undefined && target.account) {
       // A token was refreshed on the way; losing it would lock the account out.

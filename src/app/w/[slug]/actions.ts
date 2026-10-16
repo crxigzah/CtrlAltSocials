@@ -7,7 +7,7 @@ import { describeError, getAdapter } from "@/lib/platforms/adapters";
 import { decryptJson } from "@/lib/crypto";
 import type { ConnectResult, FormAdapter } from "@/lib/platforms/adapters/shared";
 import { getPlatform, postProblems, UPLOAD_TYPES, type MediaInfo } from "@/lib/platforms/catalog";
-import { publishPost } from "@/lib/publisher";
+import { publishPost, retryPost } from "@/lib/publisher";
 import { createClient } from "@/lib/supabase/server";
 import type { Post } from "@/lib/types";
 import { getWorkspace } from "@/lib/workspace";
@@ -138,7 +138,13 @@ export async function createPost(slug: string, formData: FormData) {
   const supabase = await createClient();
   const media = await verifyMedia(supabase, ws.id, String(formData.get("media") ?? "[]"));
   if (typeof media === "string") return back(path, { error: media });
-  if (!body && media.length === 0) back(path, { error: "Write something or attach a file first." });
+  // Per-account wording, only kept when it actually differs from the main text.
+  const overrides = new Map<string, string>();
+  for (const id of accountIds) {
+    const text = formData.get(`override_${id}`);
+    if (text !== null && String(text).trim() !== body) overrides.set(id, String(text).trim());
+  }
+  if (!body && media.length === 0 && overrides.size === 0) back(path, { error: "Write something or attach a file first." });
 
   // Only this workspace's accounts can be targeted, whatever the form sent.
   const { data: accounts } = await supabase
@@ -150,20 +156,26 @@ export async function createPost(slug: string, formData: FormData) {
 
   for (const a of accounts!) {
     const platform = getPlatform(a.platform)!;
-    const problems = postProblems(platform, body, media);
+    const problems = postProblems(platform, overrides.get(a.id) ?? body, media);
     if (problems.length) back(path, { error: `${a.label} (${platform.name}): ${problems.join(", ")}.` });
   }
 
   const { data: post, error } = await supabase
     .from("posts")
-    .insert({ workspace_id: ws.id, body, scheduled_at: scheduledAt.toISOString(), status: when === "now" ? "publishing" : "scheduled" })
+    .insert({
+      workspace_id: ws.id,
+      body,
+      scheduled_at: scheduledAt.toISOString(),
+      status: when === "now" ? "publishing" : "scheduled",
+      claimed_at: when === "now" ? new Date().toISOString() : null,
+    })
     .select()
     .single<Post>();
   if (error || !post) return back(path, { error: error?.message ?? "Couldn't save the post." });
 
   const { error: targetError } = await supabase
     .from("post_targets")
-    .insert(accounts!.map((a) => ({ post_id: post.id, account_id: a.id })));
+    .insert(accounts!.map((a) => ({ post_id: post.id, account_id: a.id, body: overrides.get(a.id) ?? null })));
   const { error: mediaError } = media.length
     ? await supabase.from("post_media").insert(media.map((m, position) => ({ post_id: post.id, position, path: m.path, mime: m.mime, size: m.size, alt: m.alt })))
     : { error: null };
@@ -179,6 +191,16 @@ export async function createPost(slug: string, formData: FormData) {
   }
   revalidatePath(path);
   back(path, { scheduled: "1" });
+}
+
+export async function retryFailed(slug: string, postId: string) {
+  const ws = await getWorkspace(slug);
+  const supabase = await createClient();
+  const { data: owned } = await supabase.from("posts").select("id").eq("id", postId).eq("workspace_id", ws.id).maybeSingle();
+  if (!owned) back(`/w/${slug}`, { error: "That post isn't in this project." });
+  const status = await retryPost(supabase, postId);
+  revalidatePath(`/w/${slug}`);
+  back(`/w/${slug}`, status ? { posted: status } : { error: "That post is already sending or has nothing left to retry." });
 }
 
 export async function cancelPost(slug: string, postId: string) {

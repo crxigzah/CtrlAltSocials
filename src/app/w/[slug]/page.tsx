@@ -4,7 +4,7 @@ import { LIVE_PLATFORMS } from "@/lib/platforms/catalog";
 import { createClient } from "@/lib/supabase/server";
 import type { Account, Post, PostTarget } from "@/lib/types";
 import { getWorkspace } from "@/lib/workspace";
-import { cancelPost, createPost } from "./actions";
+import { cancelPost, createPost, retryFailed } from "./actions";
 import { Composer } from "./composer";
 import { LocalTime } from "./local-time";
 
@@ -86,7 +86,15 @@ export default async function ComposePage({
       <section className="space-y-3">
         <h2 className="font-semibold">History</h2>
         {history.length === 0 && <p className="text-sm text-subtle">Nothing posted yet.</p>}
-        {history.map((p) => <PostCard key={p.id} post={p} />)}
+        {history.map((p) => (
+          <PostCard key={p.id} post={p}>
+            {(p.status === "failed" || p.status === "partial") && (
+              <form action={retryFailed.bind(null, slug, p.id)}>
+                <button className="text-xs text-accent hover:underline">Retry failed</button>
+              </form>
+            )}
+          </PostCard>
+        ))}
       </section>
     </div>
   );
@@ -118,6 +126,11 @@ function PostCard({ post, children }: { post: PostRow; children?: React.ReactNod
           </li>
         ))}
       </ul>
+      {post.post_targets.filter((t) => t.body !== null).map((t) => (
+        <p key={`b-${t.id}`} className="whitespace-pre-wrap border-l-2 border-line pl-2 text-xs text-muted">
+          <span className="text-subtle">{t.account?.label}:</span> {t.body}
+        </p>
+      ))}
       {post.post_targets.filter((t) => t.error).map((t) => (
         <p key={t.id} className="text-xs text-bad">{t.account?.label}: {t.error}</p>
       ))}

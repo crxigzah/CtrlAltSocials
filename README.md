@@ -10,6 +10,8 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Brand kit + setup checklist:** handle, bio, website and sign-up email per project, with a checklist of every platform's sign-up page, copy buttons, and warnings when the handle or bio is too long for a platform. You do the sign-ups yourself.
 - **Posting:** Bluesky (app password), Discord (channel webhook), and Threads, X, Instagram and Facebook Pages (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
 - **Images and video:** attach up to 20 files with alt text and drag-free reordering. The composer checks each platform's rules (count, file type, size, mixing images and video) before you can post. Files upload straight to a private Supabase Storage bucket and platforms get short-lived signed links.
+- **Per-account wording:** give X a shorter version or Instagram extra hashtags without writing separate posts.
+- **Retry failed:** resend to just the accounts a post failed on; the ones that worked aren't posted to twice.
 - **Credentials** are encrypted with AES-256-GCM before they reach the database.
 
 Planned next: Reddit, YouTube, TikTok. Each needs a developer app registered with the platform.
@@ -86,4 +88,4 @@ select cron.schedule(
 );
 ```
 
-"Post now" doesn't need the scheduler; it sends straight away.
+"Post now" doesn't need the scheduler; it sends straight away. Each run works for up to about 25 seconds and leaves anything else for the next minute. If a run is cut off mid-post, that post is picked up again after 10 minutes, skipping accounts it already reached.
