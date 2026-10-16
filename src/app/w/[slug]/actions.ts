@@ -368,3 +368,23 @@ export async function tailorForAccounts(slug: string, body: string, accountIds: 
     .in("id", accountIds.slice(0, 50));
   return tailorPost(ws, String(body).slice(0, 5000), accounts ?? []);
 }
+
+export type LibraryItem = { path: string; mime: string; size: number; url: string };
+
+/** The project's stored images and videos, newest first, with short-lived preview links. */
+export async function listLibrary(slug: string): Promise<LibraryItem[]> {
+  const ws = await getWorkspace(slug);
+  const supabase = await createClient();
+  const { data: files } = await supabase.storage
+    .from("media")
+    .list(ws.id, { limit: 60, sortBy: { column: "created_at", order: "desc" } });
+  const items = (files ?? [])
+    .map((f) => {
+      const meta = (f.metadata ?? {}) as { mimetype?: string; size?: number };
+      return { path: `${ws.id}/${f.name}`, mime: meta.mimetype ?? "", size: meta.size ?? 0 };
+    })
+    .filter((f) => MEDIA_PATH.test(f.path) && f.mime && f.size);
+  if (!items.length) return [];
+  const { data: signed } = await supabase.storage.from("media").createSignedUrls(items.map((i) => i.path), 60 * 60);
+  return items.map((item, i) => ({ ...item, url: signed?.[i]?.signedUrl ?? "" })).filter((i) => i.url);
+}

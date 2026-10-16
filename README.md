@@ -12,6 +12,7 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Images and video:** attach up to 20 files with alt text and drag-free reordering. The composer checks each platform's rules (count, file type, size, mixing images and video) before you can post. Files upload straight to a private Supabase Storage bucket and platforms get short-lived signed links.
 - **Per-account wording:** give X a shorter version or Instagram extra hashtags without writing separate posts.
 - **Posting slots and queue:** set regular times per project (e.g. weekdays 12:00 and 18:00, in the project's timezone) and "Add to queue" drops a post into the next free one.
+- **Media library:** every image and video you've attached is kept per project; "From library" in the composer reuses one without uploading it again.
 - **Drafts and snippets:** save half-finished posts, and keep hashtag sets or sign-offs to insert with one click.
 - **Failure alerts:** a Discord webhook per project gets a message, with the reason, whenever a scheduled post fails or only partly goes out.
 - **Insights:** likes, comments, shares and views pulled back from each platform (hourly for a post's first day, then every six hours for two weeks), with 30-day totals against the previous 30 days, a per-platform breakdown and top posts. Discord doesn't report numbers.

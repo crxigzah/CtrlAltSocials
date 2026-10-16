@@ -8,7 +8,7 @@ import { getPlatform, MAX_UPLOAD_BYTES, postLength, postProblems, UPLOAD_TYPES }
 import { REPEAT_LABEL, type Repeat } from "@/lib/slots";
 import { createClient } from "@/lib/supabase/client";
 import type { Account } from "@/lib/types";
-import { discardUpload, tailorForAccounts } from "./actions";
+import { discardUpload, listLibrary, tailorForAccounts, type LibraryItem } from "./actions";
 
 /** A post to load into the composer: editing a scheduled one (postId set) or duplicating an old one. */
 export type Draft = {
@@ -99,6 +99,19 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
   const [overrides, setOverrides] = useState<Record<string, string>>(draft?.overrides ?? {});
   const fileInput = useRef<HTMLInputElement>(null);
   const [tailoring, startTailor] = useTransition();
+  const [library, setLibrary] = useState<LibraryItem[] | null>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [loadingLibrary, startLibrary] = useTransition();
+
+  function openLibrary() {
+    setLibraryOpen((open) => !open);
+    if (library === null) startLibrary(async () => setLibrary(await listLibrary(slug)));
+  }
+
+  function addFromLibrary(item: LibraryItem) {
+    if (attachments.some((a) => a.path === item.path)) return;
+    setAttachments((prev) => [...prev, { key: `${item.path}#${Date.now()}`, mime: item.mime, size: item.size, preview: item.url, alt: "", path: item.path, error: null }]);
+  }
   const [tailorMessage, setTailorMessage] = useState<{ kind: "error" | "warn"; text: string } | null>(null);
   const [wordingOpen, setWordingOpen] = useState(Object.keys(draft?.overrides ?? {}).length > 0);
 
@@ -279,6 +292,9 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
           <button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={() => fileInput.current?.click()}>
             + Image or video
           </button>
+          <button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={openLibrary} aria-expanded={libraryOpen}>
+            From library
+          </button>
           {parts.length < 25 && (
             <button
               type="button"
@@ -302,6 +318,41 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
           ))}
         </div>
       </div>
+
+      {libraryOpen && (
+        <div className="rounded-lg border border-line p-3">
+          {loadingLibrary || library === null ? (
+            <p className="text-xs text-muted">Loading…</p>
+          ) : library.length === 0 ? (
+            <p className="text-xs text-muted">Nothing here yet. Images and videos you attach to posts are kept here to reuse.</p>
+          ) : (
+            <ul className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">
+              {library.map((item) => {
+                const added = attachments.some((a) => a.path === item.path);
+                return (
+                  <li key={item.path}>
+                    <button
+                      type="button"
+                      onClick={() => addFromLibrary(item)}
+                      disabled={added}
+                      title={added ? "Already attached" : "Attach"}
+                      className={`relative block aspect-square w-full overflow-hidden rounded-md border ${added ? "border-accent opacity-50" : "border-line hover:border-accent"}`}
+                    >
+                      {item.mime.startsWith("video/") ? (
+                        <video src={item.url} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={item.url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                      )}
+                      {item.mime.startsWith("video/") && <span className="absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[10px] text-white">video</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div>
         <div className="field-label">Post to</div>
