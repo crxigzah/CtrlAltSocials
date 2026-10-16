@@ -31,10 +31,10 @@ export default async function ComposePage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ error?: string; posted?: string; scheduled?: string; edit?: string; duplicate?: string; text?: string }>;
+  searchParams: Promise<{ error?: string; posted?: string; scheduled?: string; edit?: string; duplicate?: string; text?: string; imported?: string }>;
 }) {
   const { slug } = await params;
-  const { error, posted, scheduled, edit, duplicate, text: sharedText } = await searchParams;
+  const { error, posted, scheduled, edit, duplicate, text: sharedText, imported } = await searchParams;
   const ws = await getWorkspace(slug);
   const supabase = await createClient();
 
@@ -78,6 +78,7 @@ export default async function ComposePage({
       {scheduled === "1" && <p className="notice-ok">Scheduled.</p>}
       {queuedAt && <p className="notice-ok">Added to the queue for {fmt(queuedAt)}.</p>}
       {scheduled === "draft" && <p className="notice-ok">Draft saved.</p>}
+      {imported && <p className="notice-ok">Imported {imported} post{imported === "1" ? "" : "s"}.</p>}
       {scheduled === "updated" && <p className="notice-ok">Changes saved.</p>}
       {edit && !draft && <p className="notice-error">That post has already gone out or been cancelled, so it can&apos;t be edited.</p>}
       {draft && (
