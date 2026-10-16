@@ -160,18 +160,40 @@ export async function createPost(slug: string, formData: FormData) {
     if (problems.length) back(path, { error: `${a.label} (${platform.name}): ${problems.join(", ")}.` });
   }
 
-  const { data: post, error } = await supabase
-    .from("posts")
-    .insert({
-      workspace_id: ws.id,
-      body,
-      scheduled_at: scheduledAt.toISOString(),
-      status: when === "now" ? "publishing" : "scheduled",
-      claimed_at: when === "now" ? new Date().toISOString() : null,
-    })
-    .select()
-    .single<Post>();
-  if (error || !post) return back(path, { error: error?.message ?? "Couldn't save the post." });
+  const fields = {
+    body,
+    scheduled_at: scheduledAt.toISOString(),
+    status: when === "now" ? "publishing" : "scheduled",
+    claimed_at: when === "now" ? new Date().toISOString() : null,
+  };
+  const editId = optional(formData.get("post_id"));
+  let post: Post | null;
+  let dropped: string[] = [];
+
+  if (editId) {
+    // Editing: only while it's still waiting. The status guard on the update means a
+    // publisher run that grabbed it a moment ago wins, and the edit is refused.
+    const { data: before } = await supabase
+      .from("posts")
+      .select("post_media(path)")
+      .eq("id", editId)
+      .eq("workspace_id", ws.id)
+      .eq("status", "scheduled")
+      .maybeSingle();
+    const { data: updated } = before
+      ? await supabase.from("posts").update(fields).eq("id", editId).eq("status", "scheduled").select().maybeSingle<Post>()
+      : { data: null };
+    if (!updated) return back(path, { error: "That post has already been sent or cancelled, so it can't be edited." });
+    post = updated;
+    await supabase.from("post_targets").delete().eq("post_id", post.id);
+    await supabase.from("post_media").delete().eq("post_id", post.id);
+    const kept = new Set(media.map((m) => m.path));
+    dropped = ((before!.post_media ?? []) as { path: string }[]).map((m) => m.path).filter((p) => !kept.has(p));
+  } else {
+    const { data: inserted, error } = await supabase.from("posts").insert({ workspace_id: ws.id, ...fields }).select().single<Post>();
+    if (error || !inserted) return back(path, { error: error?.message ?? "Couldn't save the post." });
+    post = inserted;
+  }
 
   const { error: targetError } = await supabase
     .from("post_targets")
@@ -180,9 +202,11 @@ export async function createPost(slug: string, formData: FormData) {
     ? await supabase.from("post_media").insert(media.map((m, position) => ({ post_id: post.id, position, path: m.path, mime: m.mime, size: m.size, alt: m.alt })))
     : { error: null };
   if (targetError || mediaError) {
-    await supabase.from("posts").delete().eq("id", post.id);
+    if (editId) await supabase.from("posts").update({ status: "failed" }).eq("id", post.id);
+    else await supabase.from("posts").delete().eq("id", post.id);
     back(path, { error: (targetError ?? mediaError)!.message });
   }
+  await removeUnreferenced(supabase, dropped);
 
   if (when === "now") {
     const status = await publishPost(supabase, post);
@@ -190,7 +214,7 @@ export async function createPost(slug: string, formData: FormData) {
     back(path, { posted: status });
   }
   revalidatePath(path);
-  back(path, { scheduled: "1" });
+  back(path, { scheduled: editId ? "updated" : "1" });
 }
 
 export async function retryFailed(slug: string, postId: string) {
@@ -207,16 +231,27 @@ export async function cancelPost(slug: string, postId: string) {
   const ws = await getWorkspace(slug);
   const supabase = await createClient();
   // Only posts that haven't started sending can be cancelled.
+  const { data: media } = await supabase.from("post_media").select("path").eq("post_id", postId);
   const { data: deleted } = await supabase
     .from("posts")
     .delete()
     .eq("id", postId)
     .eq("workspace_id", ws.id)
     .eq("status", "scheduled")
-    .select("post_media(path)");
-  const paths = (deleted ?? []).flatMap((p) => (p.post_media as { path: string }[]).map((m) => m.path));
-  if (paths.length) await supabase.storage.from("media").remove(paths);
+    .select("id");
+  const paths = deleted?.length ? (media ?? []).map((m) => m.path) : [];
+  await removeUnreferenced(supabase, paths);
   revalidatePath(`/w/${slug}`);
+}
+
+/** Deletes stored files that no post refers to any more (a duplicated post can share files with its original). */
+async function removeUnreferenced(supabase: Awaited<ReturnType<typeof createClient>>, paths: string[]) {
+  const orphans: string[] = [];
+  for (const path of paths) {
+    const { count } = await supabase.from("post_media").select("id", { count: "exact", head: true }).eq("path", path);
+    if (!count) orphans.push(path);
+  }
+  if (orphans.length) await supabase.storage.from("media").remove(orphans);
 }
 
 /** Removes a file uploaded in the composer but taken off the post before it was sent. */

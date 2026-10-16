@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Account, Post, PostTarget } from "@/lib/types";
 import { getWorkspace } from "@/lib/workspace";
 import { cancelPost, createPost, retryFailed } from "./actions";
-import { Composer } from "./composer";
+import { Composer, type Draft } from "./composer";
 import { LocalTime } from "./local-time";
 
 export const metadata = { title: "Compose" };
@@ -25,10 +25,10 @@ export default async function ComposePage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ error?: string; posted?: string; scheduled?: string }>;
+  searchParams: Promise<{ error?: string; posted?: string; scheduled?: string; edit?: string; duplicate?: string }>;
 }) {
   const { slug } = await params;
-  const { error, posted, scheduled } = await searchParams;
+  const { error, posted, scheduled, edit, duplicate } = await searchParams;
   const ws = await getWorkspace(slug);
   const supabase = await createClient();
 
@@ -44,6 +44,7 @@ export default async function ComposePage({
       .returns<PostRow[]>(),
   ]);
 
+  const draft = await loadDraft(supabase, ws.id, edit ?? duplicate, Boolean(edit));
   const upcoming = (posts ?? []).filter((p) => p.status === "scheduled").reverse();
   const history = (posts ?? []).filter((p) => p.status !== "scheduled");
 
@@ -53,7 +54,15 @@ export default async function ComposePage({
       {posted === "done" && <p className="notice-ok">Posted to every account.</p>}
       {posted === "partial" && <p className="notice-error">Posted to some accounts but not all. See the details below.</p>}
       {posted === "failed" && <p className="notice-error">The post didn&apos;t go out. See the details below.</p>}
-      {scheduled && <p className="notice-ok">Scheduled.</p>}
+      {scheduled === "1" && <p className="notice-ok">Scheduled.</p>}
+      {scheduled === "updated" && <p className="notice-ok">Changes saved.</p>}
+      {edit && !draft && <p className="notice-error">That post has already gone out or been cancelled, so it can&apos;t be edited.</p>}
+      {draft && (
+        <p className="flex items-center gap-3 text-sm text-muted">
+          {draft.postId ? "Editing a scheduled post." : "Copied from an earlier post. Change anything you like, then post or schedule it."}
+          <Link href={`/w/${slug}`} className="link">{draft.postId ? "Stop editing" : "Start fresh"}</Link>
+        </p>
+      )}
 
       {(accounts ?? []).length === 0 ? (
         <div className="card text-center">
@@ -63,6 +72,8 @@ export default async function ComposePage({
         </div>
       ) : (
         <Composer
+          key={draft ? `${draft.postId ?? "copy"}-${edit ?? duplicate}` : "new"}
+          draft={draft ?? undefined}
           slug={slug}
           workspaceId={ws.id}
           accounts={accounts as Pick<Account, "id" | "platform" | "label" | "status">[]}
@@ -75,9 +86,12 @@ export default async function ComposePage({
           <h2 className="font-semibold">Queue</h2>
           {upcoming.map((p) => (
             <PostCard key={p.id} post={p}>
-              <form action={cancelPost.bind(null, slug, p.id)}>
-                <button className="text-xs text-muted hover:text-bad">Cancel</button>
-              </form>
+              <span className="flex items-center gap-3">
+                <Link href={`/w/${slug}?edit=${p.id}`} className="text-xs text-accent hover:underline">Edit</Link>
+                <form action={cancelPost.bind(null, slug, p.id)}>
+                  <button className="text-xs text-muted hover:text-bad">Cancel</button>
+                </form>
+              </span>
             </PostCard>
           ))}
         </section>
@@ -88,11 +102,14 @@ export default async function ComposePage({
         {history.length === 0 && <p className="text-sm text-subtle">Nothing posted yet.</p>}
         {history.map((p) => (
           <PostCard key={p.id} post={p}>
-            {(p.status === "failed" || p.status === "partial") && (
-              <form action={retryFailed.bind(null, slug, p.id)}>
-                <button className="text-xs text-accent hover:underline">Retry failed</button>
-              </form>
-            )}
+            <span className="flex items-center gap-3">
+              {(p.status === "failed" || p.status === "partial") && (
+                <form action={retryFailed.bind(null, slug, p.id)}>
+                  <button className="text-xs text-accent hover:underline">Retry failed</button>
+                </form>
+              )}
+              <Link href={`/w/${slug}?duplicate=${p.id}`} className="text-xs text-muted hover:text-fg">Post again</Link>
+            </span>
           </PostCard>
         ))}
       </section>
@@ -136,4 +153,38 @@ function PostCard({ post, children }: { post: PostRow; children?: React.ReactNod
       ))}
     </article>
   );
+}
+
+/** Loads a post into the composer: as itself when editing (only while scheduled), or as a fresh copy. */
+async function loadDraft(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workspaceId: string,
+  postId: string | undefined,
+  editing: boolean,
+): Promise<Draft | null> {
+  if (!postId) return null;
+  let query = supabase
+    .from("posts")
+    .select("id, body, scheduled_at, status, post_media(path, alt, mime, size, position), post_targets(account_id, body)")
+    .eq("id", postId)
+    .eq("workspace_id", workspaceId);
+  if (editing) query = query.eq("status", "scheduled");
+  const { data } = await query.maybeSingle();
+  if (!data) return null;
+
+  const media = [...(data.post_media as { path: string; alt: string | null; mime: string; size: number; position: number }[])].sort(
+    (a, b) => a.position - b.position,
+  );
+  const { data: signed } = media.length
+    ? await supabase.storage.from("media").createSignedUrls(media.map((m) => m.path), 60 * 60)
+    : { data: [] };
+  const targets = data.post_targets as { account_id: string; body: string | null }[];
+  return {
+    postId: editing ? data.id : null,
+    body: data.body,
+    accountIds: targets.map((t) => t.account_id),
+    overrides: Object.fromEntries(targets.filter((t) => t.body !== null).map((t) => [t.account_id, t.body!])),
+    media: media.map((m, i) => ({ ...m, preview: signed?.[i]?.signedUrl ?? "" })),
+    scheduledAt: data.scheduled_at,
+  };
 }

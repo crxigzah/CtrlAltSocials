@@ -9,16 +9,28 @@ import { createClient } from "@/lib/supabase/client";
 import type { Account } from "@/lib/types";
 import { discardUpload } from "./actions";
 
+/** A post to load into the composer: editing a scheduled one (postId set) or duplicating an old one. */
+export type Draft = {
+  postId: string | null;
+  body: string;
+  accountIds: string[];
+  overrides: Record<string, string>;
+  media: { path: string; alt: string | null; mime: string; size: number; preview: string }[];
+  scheduledAt: string | null;
+};
+
 type Props = {
   slug: string;
   workspaceId: string;
   accounts: Pick<Account, "id" | "platform" | "label" | "status">[];
   action: (formData: FormData) => Promise<void>;
+  draft?: Draft;
 };
 
 type Attachment = {
   key: string;
-  file: File;
+  mime: string;
+  size: number;
   preview: string;
   alt: string;
   path: string | null;
@@ -39,15 +51,22 @@ function localInputValue(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function Composer({ slug, workspaceId, accounts, action }: Props) {
-  const [body, setBody] = useState("");
+export function Composer({ slug, workspaceId, accounts, action, draft }: Props) {
+  const editing = Boolean(draft?.postId);
+  const [body, setBody] = useState(draft?.body ?? "");
   // Everything's ticked to start with; accounts with a problem show a "check" badge instead of silently dropping out.
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(accounts.map((a) => a.id)));
-  const [when, setWhen] = useState<"now" | "later">("now");
-  const [localTime, setLocalTime] = useState(() => localInputValue(new Date(Date.now() + 60 * 60 * 1000)));
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(draft ? draft.accountIds.filter((id) => accounts.some((a) => a.id === id)) : accounts.map((a) => a.id)),
+  );
+  const [when, setWhen] = useState<"now" | "later">(editing ? "later" : "now");
+  const [localTime, setLocalTime] = useState(() =>
+    localInputValue(draft?.scheduledAt && editing ? new Date(draft.scheduledAt) : new Date(Date.now() + 60 * 60 * 1000)),
+  );
+  const [attachments, setAttachments] = useState<Attachment[]>(() =>
+    (draft?.media ?? []).map((m) => ({ key: m.path, mime: m.mime, size: m.size, preview: m.preview, alt: m.alt ?? "", path: m.path, error: null })),
+  );
   // Accounts given their own wording; everyone else gets the main text.
-  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [overrides, setOverrides] = useState<Record<string, string>>(draft?.overrides ?? {});
   const fileInput = useRef<HTMLInputElement>(null);
   // Created on first upload: the browser client only belongs in the browser.
   const supabaseRef = useRef<SupabaseClient | null>(null);
@@ -58,7 +77,7 @@ export function Composer({ slug, workspaceId, accounts, action }: Props) {
 
   const uploading = attachments.some((a) => !a.path && !a.error);
   const ready = attachments.filter((a) => a.path);
-  const mediaInfo = ready.map((a) => ({ mime: a.file.type, size: a.file.size }));
+  const mediaInfo = ready.map((a) => ({ mime: a.mime, size: a.size }));
 
   const checks = useMemo(
     () =>
@@ -97,7 +116,7 @@ export function Composer({ slug, workspaceId, accounts, action }: Props) {
         : file.size > MAX_UPLOAD_BYTES
           ? "Files must be under 50 MB."
           : null;
-      setAttachments((prev) => [...prev, { key, file, preview, alt: "", path: null, error }]);
+      setAttachments((prev) => [...prev, { key, mime: file.type, size: file.size, preview, alt: "", path: null, error }]);
       if (error) continue;
 
       const path = `${workspaceId}/${key}.${EXT[file.type]}`;
@@ -129,6 +148,7 @@ export function Composer({ slug, workspaceId, accounts, action }: Props) {
 
   return (
     <form action={action} className="card space-y-4">
+      {draft?.postId && <input type="hidden" name="post_id" value={draft.postId} />}
       <textarea
         name="body"
         value={body}
@@ -144,7 +164,7 @@ export function Composer({ slug, workspaceId, accounts, action }: Props) {
           {attachments.map((a, i) => (
             <li key={a.key} className="space-y-1.5">
               <div className="relative aspect-square overflow-hidden rounded-lg border border-line bg-raised">
-                {a.file.type.startsWith("video/") ? (
+                {a.mime.startsWith("video/") ? (
                   <video src={a.preview} className="h-full w-full object-cover" muted playsInline />
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -301,7 +321,13 @@ export function Composer({ slug, workspaceId, accounts, action }: Props) {
           pendingText={when === "now" ? "Posting…" : "Scheduling…"}
           disabled={!canSubmit}
         >
-          {uploading ? "Uploading…" : when === "now" ? `Post to ${selected.size}` : `Schedule for ${selected.size}`}
+          {uploading
+            ? "Uploading…"
+            : when === "now"
+              ? `Post to ${selected.size}`
+              : editing
+                ? "Save changes"
+                : `Schedule for ${selected.size}`}
         </SubmitButton>
       </div>
     </form>
