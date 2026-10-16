@@ -36,7 +36,7 @@ With Docker running, `npx supabase start` brings up Postgres, Auth and Storage l
    npm install
    npm run dev
    ```
-4. **Lock down sign-ups:** after creating your own login, turn off new sign-ups in Supabase → Authentication → Sign In / Providers so nobody else can make an account on your deployment.
+4. **Lock down sign-ups:** set `ALLOWED_EMAILS` to your own email so the app turns everyone else away, and turn off new sign-ups in Supabase → Authentication → Sign In / Providers once you've made your login.
 
 ## Connecting Threads, X, Instagram and Facebook
 

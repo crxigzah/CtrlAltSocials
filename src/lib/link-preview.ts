@@ -1,4 +1,6 @@
 import "server-only";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 
 // Reads a page's Open Graph tags so platforms that don't build link cards
 // themselves (Bluesky) can still show one. Best effort: any failure means no card.
@@ -56,6 +58,27 @@ async function readCapped(res: Response, cap: number): Promise<string> {
   return new TextDecoder().decode(Buffer.concat(chunks).subarray(0, cap));
 }
 
+/** True for loopback, private, link-local and other non-public addresses. */
+function isPrivateAddress(ip: string): boolean {
+  if (isIP(ip) === 6) {
+    const v = ip.toLowerCase();
+    if (v.startsWith("::ffff:")) return isPrivateAddress(v.slice(7));
+    return v === "::1" || v === "::" || v.startsWith("fc") || v.startsWith("fd") || v.startsWith("fe8") || v.startsWith("fe9") || v.startsWith("fea") || v.startsWith("feb");
+  }
+  const [a, b] = ip.split(".").map(Number);
+  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+}
+
+/** Resolves the host and refuses it if any address it points at is internal. */
+async function resolvesPublicly(url: URL): Promise<boolean> {
+  try {
+    const addresses = await lookup(url.hostname, { all: true });
+    return addresses.length > 0 && addresses.every((a) => !isPrivateAddress(a.address));
+  } catch {
+    return false;
+  }
+}
+
 export function firstUrl(text: string): string | null {
   return text.match(/https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/)?.[0] ?? null;
 }
@@ -71,13 +94,15 @@ export function parsePreview(html: string, url: string, finalUrl: string): LinkP
 
 export async function fetchLinkPreview(raw: string): Promise<LinkPreview | null> {
   const url = isPublicHttpUrl(raw);
-  if (!url) return null;
+  if (!url || !(await resolvesPublicly(url))) return null;
   try {
     const res = await fetch(url, {
+      redirect: "manual",
       headers: { "User-Agent": "CtrlAltSocials link preview (+https://github.com/crxigzah/CtrlAltSocials)", Accept: "text/html" },
       signal: AbortSignal.timeout(TIMEOUT_MS),
       cache: "no-store",
     });
+    // Redirects aren't followed: each hop would need the same checks, and cards rarely need them.
     if (!res.ok || !(res.headers.get("content-type") ?? "").includes("html")) return null;
     return parsePreview(await readCapped(res, MAX_HTML_BYTES), url.toString(), res.url || url.toString());
   } catch {
@@ -87,9 +112,10 @@ export async function fetchLinkPreview(raw: string): Promise<LinkPreview | null>
 
 /** The preview image's bytes, if it's a reasonable image under the size cap. */
 export async function fetchPreviewImage(url: string, maxBytes: number): Promise<{ bytes: Buffer; mime: string } | null> {
-  if (!isPublicHttpUrl(url)) return null;
+  const parsed = isPublicHttpUrl(url);
+  if (!parsed || !(await resolvesPublicly(parsed))) return null;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS), cache: "no-store" });
+    const res = await fetch(parsed, { redirect: "manual", signal: AbortSignal.timeout(TIMEOUT_MS), cache: "no-store" });
     const mime = (res.headers.get("content-type") ?? "").split(";")[0].trim();
     if (!res.ok || !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(mime)) return null;
     const length = Number(res.headers.get("content-length") ?? 0);
