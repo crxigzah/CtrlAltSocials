@@ -118,7 +118,19 @@ export const instagram: OAuthAdapter<InstagramCredentials> = {
     } catch {
       // Live either way.
     }
-    return { url, credentials: refreshed ?? undefined };
+    return { url, remoteId: mediaId, credentials: refreshed ?? undefined };
+  },
+
+  async metrics(c, id) {
+    const refreshed = (await refreshIfDue(c)) ?? undefined;
+    const creds = refreshed ?? c;
+    const url = new URL(`${GRAPH}/${VERSION}/${id}`);
+    url.searchParams.set("fields", "like_count,comments_count");
+    url.searchParams.set("access_token", creds.accessToken);
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw Object.assign(new PlatformError(`Instagram stats lookup failed: ${await readError(res)}`), { credentials: refreshed });
+    const m = (await res.json()) as { like_count?: number; comments_count?: number };
+    return { metrics: { likes: m.like_count, comments: m.comments_count }, credentials: refreshed };
   },
 };
 

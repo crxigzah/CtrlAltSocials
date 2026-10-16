@@ -12,6 +12,8 @@ export type ConnectResult<C> = {
 /** `credentials` comes back when the adapter refreshed a token during publishing and it must be saved. */
 export type PublishResult<C> = {
   url: string | null;
+  /** The platform's id for the new post, used to fetch its numbers later. */
+  remoteId?: string;
   credentials?: C;
   /** Something the user should know about a post that did go out (e.g. it was posted as private). */
   note?: string;
@@ -29,8 +31,13 @@ export type MediaFile = {
   filename: string;
 };
 
+/** Engagement as the platform reports it; platforms that don't report a number leave it out. */
+export type Metrics = { views?: number; likes?: number; comments?: number; shares?: number };
+
 type Base<C> = {
   publish(credentials: C, text: string, media: MediaFile[]): Promise<PublishResult<C>>;
+  /** Current numbers for a post this account made. `credentials` is set when a token was refreshed. */
+  metrics?(credentials: C, remoteId: string): Promise<{ metrics: Metrics; credentials?: C }>;
 };
 
 /** Platforms connected by typing something into a form (an app password, a webhook URL). */

@@ -97,7 +97,7 @@ async function loadMedia(supabase: SupabaseClient, postId: string): Promise<Medi
 
 async function sendOne(target: TargetRow, body: string, media: MediaFile[]) {
   const fail = (error: string, accountError = false, newCredentials?: unknown) =>
-    ({ status: "failed" as const, error, sent_at: null, remote_url: null, accountError, newCredentials });
+    ({ status: "failed" as const, error, sent_at: null, remote_url: null, remote_id: null, accountError, newCredentials });
 
   const account = target.account;
   if (!account || !account.credentials) return fail("This account was removed or never finished connecting.");
@@ -115,6 +115,7 @@ async function sendOne(target: TargetRow, body: string, media: MediaFile[]) {
       error: result.note ?? null,
       sent_at: new Date().toISOString(),
       remote_url: result.url,
+      remote_id: result.remoteId ?? null,
       accountError: false,
       newCredentials: result.credentials,
     };

@@ -14,6 +14,7 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Posting slots and queue:** set regular times per project (e.g. weekdays 12:00 and 18:00, in the project's timezone) and "Add to queue" drops a post into the next free one.
 - **Drafts and snippets:** save half-finished posts, and keep hashtag sets or sign-offs to insert with one click.
 - **Failure alerts:** a Discord webhook per project gets a message, with the reason, whenever a scheduled post fails or only partly goes out.
+- **Insights:** likes, comments, shares and views pulled back from each platform (hourly for a post's first day, then every six hours for two weeks), with 30-day totals against the previous 30 days, a per-platform breakdown and top posts. Discord doesn't report numbers.
 - **Calendar:** a month view per project, plus a "Coming up" list across every project on the home page.
 - **Edit and post again:** change a scheduled post right up until it goes out, or copy any earlier post (text, attachments and per-account wording) into the composer.
 - **Tailor with AI (optional):** with `ANTHROPIC_API_KEY` set, one click has Claude write a version of the post for each ticked account (shorter for X, "link in bio" and hashtags for Instagram, a title line for Reddit and YouTube) into the per-account boxes, for you to check before posting.
@@ -103,6 +104,10 @@ Until TikTok reviews the app, it only accepts private posts. CtrlAltSocials post
 
 The first line of a post is the title and the rest the body; a body that's just a link makes a link post. Reddit is strict about self-promotion and new accounts, so read each subreddit's rules first.
 
+### Numbers for Insights
+
+Stats use the same connections, with a few extra permissions: Threads asks for `threads_manage_insights`, Reddit for `read`, and TikTok for `video.list`. Accounts connected before Insights existed won't report numbers until you press **Reconnect** on the Accounts tab. X counts each stats lookup as a paid read.
+
 ## Scheduled posts
 
 `/api/cron/publish` sends every post that's due. Something has to call it every minute or so with `Authorization: Bearer <CRON_SECRET>`. Supabase can do this for free with `pg_cron` and `pg_net` (enable both under Database → Extensions), then run:
@@ -120,4 +125,4 @@ select cron.schedule(
 );
 ```
 
-"Post now" doesn't need the scheduler; it sends straight away. Each run works for up to about 25 seconds and leaves anything else for the next minute. If a run is cut off mid-post, that post is picked up again after 10 minutes, skipping accounts it already reached.
+"Post now" doesn't need the scheduler; it sends straight away. Time left over in each run goes on refreshing Insights numbers. Each run works for up to about 25 seconds and leaves anything else for the next minute. If a run is cut off mid-post, that post is picked up again after 10 minutes, skipping accounts it already reached.

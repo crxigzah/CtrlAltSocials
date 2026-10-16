@@ -119,6 +119,23 @@ export const youtube: OAuthAdapter<YouTubeCredentials> = {
       uploaded.status?.privacyStatus && uploaded.status.privacyStatus !== "public"
         ? "Uploaded as private: Google keeps uploads from unaudited API projects private until the project passes its audit."
         : undefined;
-    return { url: `https://www.youtube.com/watch?v=${uploaded.id}`, credentials: refreshed, note };
+    return { url: `https://www.youtube.com/watch?v=${uploaded.id}`, remoteId: uploaded.id, credentials: refreshed, note };
+  },
+
+  async metrics(c, id) {
+    let refreshed: YouTubeCredentials | undefined;
+    if (c.expiresAt - Date.now() < 5 * 60 * 1000) {
+      const t = await token({ grant_type: "refresh_token", refresh_token: c.refreshToken });
+      refreshed = { ...c, accessToken: t.access_token, refreshToken: t.refresh_token ?? c.refreshToken, expiresAt: Date.now() + t.expires_in * 1000 };
+    }
+    const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${encodeURIComponent(id)}`, {
+      headers: { Authorization: `Bearer ${(refreshed ?? c).accessToken}` },
+      cache: "no-store",
+    });
+    if (!res.ok) throw Object.assign(new PlatformError(`YouTube stats lookup failed: ${await readError(res)}`), { credentials: refreshed });
+    const stats = ((await res.json()) as { items?: { statistics: Record<string, string> }[] }).items?.[0]?.statistics;
+    if (!stats) throw Object.assign(new PlatformError("That YouTube video no longer exists."), { credentials: refreshed });
+    const n = (k: string) => (stats[k] === undefined ? undefined : Number(stats[k]));
+    return { metrics: { views: n("viewCount"), likes: n("likeCount"), comments: n("commentCount") }, credentials: refreshed };
   },
 };

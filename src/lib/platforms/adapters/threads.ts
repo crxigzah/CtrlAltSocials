@@ -33,7 +33,7 @@ export const threads: OAuthAdapter<ThreadsCredentials> = {
     const url = new URL("https://threads.net/oauth/authorize");
     url.searchParams.set("client_id", requireEnv("THREADS_APP_ID"));
     url.searchParams.set("redirect_uri", redirectUri);
-    url.searchParams.set("scope", "threads_basic,threads_content_publish");
+    url.searchParams.set("scope", "threads_basic,threads_content_publish,threads_manage_insights");
     url.searchParams.set("response_type", "code");
     url.searchParams.set("state", state);
     return url.toString();
@@ -119,7 +119,26 @@ export const threads: OAuthAdapter<ThreadsCredentials> = {
     } catch {
       // The post is live either way; a missing link isn't worth failing over.
     }
-    return { url, credentials: refreshed ?? undefined };
+    return { url, remoteId: postId, credentials: refreshed ?? undefined };
+  },
+
+  async metrics(c, id) {
+    const refreshed = (await refreshIfDue(c)) ?? undefined;
+    const creds = refreshed ?? c;
+    const url = new URL(`${GRAPH}/v1.0/${id}/insights`);
+    url.searchParams.set("metric", "views,likes,replies,reposts,quotes");
+    url.searchParams.set("access_token", creds.accessToken);
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      // Accounts connected before insights were requested need reconnecting for numbers.
+      throw Object.assign(new PlatformError(`Threads stats lookup failed: ${await readError(res)}`), { credentials: refreshed });
+    }
+    const { data } = (await res.json()) as { data: { name: string; values?: { value: number }[]; total_value?: { value: number } }[] };
+    const get = (name: string) => {
+      const row = data.find((d) => d.name === name);
+      return row?.total_value?.value ?? row?.values?.[0]?.value ?? 0;
+    };
+    return { metrics: { views: get("views"), likes: get("likes"), comments: get("replies"), shares: get("reposts") + get("quotes") }, credentials: refreshed };
   },
 };
 

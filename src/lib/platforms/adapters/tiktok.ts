@@ -43,6 +43,12 @@ async function creatorInfo(accessToken: string) {
   );
 }
 
+async function freshCredentials(c: TikTokCredentials) {
+  if (c.expiresAt - Date.now() >= 5 * 60 * 1000) return undefined;
+  const t = await token({ grant_type: "refresh_token", refresh_token: c.refreshToken });
+  return { ...c, accessToken: t.access_token, refreshToken: t.refresh_token ?? c.refreshToken, expiresAt: Date.now() + t.expires_in * 1000 };
+}
+
 export const tiktok: OAuthAdapter<TikTokCredentials> = {
   kind: "oauth",
   env: ["TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"],
@@ -52,7 +58,7 @@ export const tiktok: OAuthAdapter<TikTokCredentials> = {
     url.searchParams.set("client_key", requireEnv("TIKTOK_CLIENT_KEY"));
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("response_type", "code");
-    url.searchParams.set("scope", "user.info.basic,video.publish");
+    url.searchParams.set("scope", "user.info.basic,video.publish,video.list");
     url.searchParams.set("state", state);
     return url.toString();
   },
@@ -115,6 +121,7 @@ export const tiktok: OAuthAdapter<TikTokCredentials> = {
 
       // TikTok processes the video afterwards; wait briefly for the post id so we can link it.
       let url: string | null = null;
+      let remoteId: string | undefined;
       for (let i = 0; i < 8 && !url; i++) {
         await new Promise((r) => setTimeout(r, 3000));
         const status = await call<{ status: string; fail_reason?: string; publicaly_available_post_id?: (string | number)[] }>(
@@ -123,9 +130,30 @@ export const tiktok: OAuthAdapter<TikTokCredentials> = {
         );
         if (status.status === "FAILED") throw new PlatformError(`TikTok couldn't publish the video: ${status.fail_reason ?? "unknown reason"}`);
         const id = status.publicaly_available_post_id?.[0];
+        if (id) remoteId = String(id);
         if (status.status === "PUBLISH_COMPLETE") url = id ? `https://www.tiktok.com/@${creds.username}/video/${id}` : `https://www.tiktok.com/@${creds.username}`;
       }
-      return { url, credentials: refreshed, note };
+      return { url, remoteId, credentials: refreshed, note };
+    } catch (err) {
+      throw Object.assign(err as Error, { credentials: refreshed });
+    }
+  },
+
+  async metrics(c, id) {
+    const refreshed = await freshCredentials(c);
+    try {
+      const data = await call<{ videos: { like_count?: number; comment_count?: number; share_count?: number; view_count?: number }[] }>(
+        await fetch(`${API}/video/query/?fields=id,like_count,comment_count,share_count,view_count`, {
+          method: "POST",
+          headers: authed((refreshed ?? c).accessToken),
+          body: JSON.stringify({ filters: { video_ids: [id] } }),
+          cache: "no-store",
+        }),
+        "stats lookup",
+      );
+      const v = data.videos?.[0];
+      if (!v) throw new PlatformError("That TikTok video isn't available.");
+      return { metrics: { views: v.view_count, likes: v.like_count, comments: v.comment_count, shares: v.share_count }, credentials: refreshed };
     } catch (err) {
       throw Object.assign(err as Error, { credentials: refreshed });
     }

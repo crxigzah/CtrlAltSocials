@@ -47,4 +47,7 @@ export type PostTarget = {
   remote_url: string | null;
   error: string | null;
   sent_at: string | null;
+  remote_id: string | null;
+  metrics: { views?: number; likes?: number; comments?: number; shares?: number } | null;
+  metrics_at: string | null;
 };

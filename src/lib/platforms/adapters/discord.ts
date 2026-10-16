@@ -52,6 +52,6 @@ export const discord: FormAdapter<DiscordCredentials> = {
     const res = await fetch(`${c.webhookUrl}?wait=true`, { method: "POST", headers, body, cache: "no-store" });
     if (!res.ok) throw new PlatformError(`Discord rejected the post: ${await readError(res)}`);
     const msg = (await res.json()) as { id: string; channel_id: string };
-    return { url: c.guildId ? `https://discord.com/channels/${c.guildId}/${msg.channel_id}/${msg.id}` : null };
+    return { url: c.guildId ? `https://discord.com/channels/${c.guildId}/${msg.channel_id}/${msg.id}` : null, remoteId: msg.id };
   },
 };

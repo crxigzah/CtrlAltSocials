@@ -57,7 +57,7 @@ export const reddit: OAuthAdapter<RedditCredentials> = {
     url.searchParams.set("state", state);
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("duration", "permanent");
-    url.searchParams.set("scope", "identity submit");
+    url.searchParams.set("scope", "identity submit read");
     return url.toString();
   },
 
@@ -102,12 +102,29 @@ export const reddit: OAuthAdapter<RedditCredentials> = {
       }),
       cache: "no-store",
     });
-    const json = (await res.json().catch(() => null)) as { json?: { errors?: [string, string, string][]; data?: { url?: string } } } | null;
+    const json = (await res.json().catch(() => null)) as { json?: { errors?: [string, string, string][]; data?: { url?: string; name?: string } } } | null;
     const errors = json?.json?.errors ?? [];
     if (!res.ok || errors.length) {
       const reason = errors.map((e) => e[1]).join("; ") || res.statusText;
       throw Object.assign(new PlatformError(`Reddit rejected the post in r/${creds.subreddit}: ${reason}`), { credentials: refreshed });
     }
-    return { url: json?.json?.data?.url ?? null, credentials: refreshed };
+    return { url: json?.json?.data?.url ?? null, remoteId: json?.json?.data?.name, credentials: refreshed };
+  },
+
+  async metrics(c, fullname) {
+    let refreshed: RedditCredentials | undefined;
+    if (c.expiresAt - Date.now() < 5 * 60 * 1000) {
+      const t = await token({ grant_type: "refresh_token", refresh_token: c.refreshToken });
+      refreshed = { ...c, accessToken: t.access_token, refreshToken: t.refresh_token ?? c.refreshToken, expiresAt: Date.now() + t.expires_in * 1000 };
+    }
+    const res = await fetch(`https://oauth.reddit.com/api/info?id=${encodeURIComponent(fullname)}`, {
+      headers: { Authorization: `Bearer ${(refreshed ?? c).accessToken}`, "User-Agent": USER_AGENT },
+      cache: "no-store",
+    });
+    if (!res.ok) throw Object.assign(new PlatformError(`Reddit stats lookup failed: ${await readError(res)}`), { credentials: refreshed });
+    const post = ((await res.json()) as { data?: { children?: { data: { score?: number; num_comments?: number } }[] } }).data?.children?.[0]?.data;
+    if (!post) throw Object.assign(new PlatformError("That Reddit post isn't available."), { credentials: refreshed });
+    // Reddit's "score" is upvotes minus downvotes, the closest thing it has to likes.
+    return { metrics: { likes: post.score, comments: post.num_comments }, credentials: refreshed };
   },
 };

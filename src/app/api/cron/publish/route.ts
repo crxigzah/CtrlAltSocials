@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendFailureAlert } from "@/lib/alerts";
+import { refreshMetrics } from "@/lib/metrics";
 import { publishPost } from "@/lib/publisher";
 import type { Post } from "@/lib/types";
 
@@ -43,7 +44,10 @@ async function run(request: NextRequest) {
     // Scheduled posts go out unattended, so problems get pushed to the project's alert channel.
     await sendFailureAlert(supabase, post, results[post.id] as Post["status"]);
   }
-  return NextResponse.json({ published: results });
+  // Spare time goes on updating recent posts' likes, comments and views.
+  const remaining = TIME_BUDGET_MS - (Date.now() - started);
+  const metricsUpdated = remaining > 3000 ? await refreshMetrics(supabase, remaining) : 0;
+  return NextResponse.json({ published: results, metricsUpdated });
 }
 
 export const GET = run;

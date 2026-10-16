@@ -64,13 +64,37 @@ export const facebook: OAuthAdapter<FacebookCredentials> = {
     const video = media.find((m) => m.mime.startsWith("video/"));
     if (video) {
       const { id } = await getJson<{ id: string }>(await post(`${c.pageId}/videos`, { file_url: video.url, description: text }), "video upload");
-      return { url: `https://www.facebook.com/${c.pageId}/videos/${id}` };
+      return { url: `https://www.facebook.com/${c.pageId}/videos/${id}`, remoteId: `video:${id}` };
     }
 
     const params: Record<string, string> = { message: text };
     for (const [i, image] of media.entries()) params[`attached_media[${i}]`] = JSON.stringify({ media_fbid: await uploadPhoto(post, c.pageId, image) });
     const { id } = await getJson<{ id: string }>(await post(`${c.pageId}/feed`, params), "post");
-    return { url: `https://www.facebook.com/${id}` };
+    return { url: `https://www.facebook.com/${id}`, remoteId: id };
+  },
+
+  async metrics(c, remoteId) {
+    const isVideo = remoteId.startsWith("video:");
+    const id = isVideo ? remoteId.slice(6) : remoteId;
+    const url = new URL(`${GRAPH}/${id}`);
+    url.searchParams.set(
+      "fields",
+      isVideo ? "likes.summary(true).limit(0),comments.summary(true).limit(0)" : "reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0),shares",
+    );
+    url.searchParams.set("access_token", c.pageToken);
+    const m = await getJson<{
+      reactions?: { summary?: { total_count?: number } };
+      likes?: { summary?: { total_count?: number } };
+      comments?: { summary?: { total_count?: number } };
+      shares?: { count?: number };
+    }>(await fetch(url, { cache: "no-store" }), "stats lookup");
+    return {
+      metrics: {
+        likes: (m.reactions ?? m.likes)?.summary?.total_count ?? 0,
+        comments: m.comments?.summary?.total_count ?? 0,
+        shares: m.shares?.count ?? 0,
+      },
+    };
   },
 };
 

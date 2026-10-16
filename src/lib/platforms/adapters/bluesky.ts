@@ -114,6 +114,14 @@ export const bluesky: FormAdapter<BlueskyCredentials> = {
     if (!res.ok) throw new PlatformError(`Bluesky rejected the post: ${await readError(res)}`);
     const { uri } = (await res.json()) as { uri: string };
     const rkey = uri.split("/").pop();
-    return { url: `https://bsky.app/profile/${session.handle}/post/${rkey}` };
+    return { url: `https://bsky.app/profile/${session.handle}/post/${rkey}`, remoteId: uri };
+  },
+  async metrics(_c, uri) {
+    // Bluesky's public AppView serves post counts without signing in.
+    const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPosts?uris=${encodeURIComponent(uri)}`, { cache: "no-store" });
+    if (!res.ok) throw new PlatformError(`Bluesky stats lookup failed: ${await readError(res)}`);
+    const post = ((await res.json()) as { posts: { likeCount?: number; repostCount?: number; replyCount?: number; quoteCount?: number }[] }).posts[0];
+    if (!post) throw new PlatformError("That Bluesky post no longer exists.");
+    return { metrics: { likes: post.likeCount ?? 0, comments: post.replyCount ?? 0, shares: (post.repostCount ?? 0) + (post.quoteCount ?? 0) } };
   },
 };

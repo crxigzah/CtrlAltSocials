@@ -99,6 +99,22 @@ export const x: OAuthAdapter<XCredentials> = {
     });
     if (!res.ok) throw keepToken(new PlatformError(`X rejected the post: ${await readError(res)}`));
     const { data } = (await res.json()) as { data: { id: string } };
-    return { url: `https://x.com/${creds.username}/status/${data.id}`, credentials: refreshed ?? undefined };
+    return { url: `https://x.com/${creds.username}/status/${data.id}`, remoteId: data.id, credentials: refreshed ?? undefined };
+  },
+
+  async metrics(c, id) {
+    const refreshed =
+      c.expiresAt - Date.now() < 5 * 60 * 1000 ? { ...c, ...(await token({ grant_type: "refresh_token", refresh_token: c.refreshToken })) } : undefined;
+    const creds = refreshed ?? c;
+    const res = await fetch(`${API}/tweets/${encodeURIComponent(id)}?tweet.fields=public_metrics`, {
+      headers: { Authorization: `Bearer ${creds.accessToken}` },
+      cache: "no-store",
+    });
+    if (!res.ok) throw Object.assign(new PlatformError(`X stats lookup failed: ${await readError(res)}`), { credentials: refreshed });
+    const m = ((await res.json()) as { data?: { public_metrics?: Record<string, number> } }).data?.public_metrics ?? {};
+    return {
+      metrics: { views: m.impression_count, likes: m.like_count, comments: m.reply_count, shares: (m.retweet_count ?? 0) + (m.quote_count ?? 0) },
+      credentials: refreshed,
+    };
   },
 };

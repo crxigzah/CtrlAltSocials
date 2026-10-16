@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MetricLine } from "@/components/metric-line";
 import { PlatformIcon } from "@/components/platform-icon";
 import { LIVE_PLATFORMS } from "@/lib/platforms/catalog";
 import { createClient } from "@/lib/supabase/server";
@@ -177,6 +178,7 @@ function PostCard({ post, children }: { post: PostRow; children?: React.ReactNod
             {t.account && <PlatformIcon platform={t.account.platform} size={16} />}
             <span>{t.account?.label ?? "Removed account"}</span>
             {t.status === "sent" && (t.remote_url ? <a href={t.remote_url} target="_blank" rel="noreferrer" className="link">view</a> : <span className="text-ok">sent</span>)}
+            {t.status === "sent" && t.metrics && <MetricLine m={t.metrics} />}
             {t.status === "failed" && <span className="text-bad">failed</span>}
           </li>
         ))}
