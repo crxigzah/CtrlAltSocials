@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { saveAccount } from "@/lib/accounts";
 import { describeError, getAdapter } from "@/lib/platforms/adapters";
-import { decryptJson } from "@/lib/crypto";
+import { decryptJson, encryptJson } from "@/lib/crypto";
+import { SUBREDDIT_RE, type RedditCredentials } from "@/lib/platforms/adapters/reddit";
 import type { ConnectResult, FormAdapter } from "@/lib/platforms/adapters/shared";
 import { getPlatform, postProblems, UPLOAD_TYPES, type MediaInfo } from "@/lib/platforms/catalog";
 import { publishPost, retryPost } from "@/lib/publisher";
@@ -107,6 +108,29 @@ export async function pickConnection(slug: string, pendingId: string, index: num
   if (saved.error) back(path, { error: saved.error });
   revalidatePath(`/w/${slug}`, "layout");
   back(path, { [saved.reconnected ? "reconnected" : "connected"]: saved.label });
+}
+
+export async function setSubreddit(slug: string, accountId: string, formData: FormData) {
+  const ws = await getWorkspace(slug);
+  const path = `/w/${slug}/accounts`;
+  const subreddit = String(formData.get("subreddit") ?? "").trim().replace(/^\/?r\//i, "");
+  if (!SUBREDDIT_RE.test(subreddit)) back(path, { error: "That isn't a valid subreddit name." });
+  const supabase = await createClient();
+  const { data: account } = await supabase
+    .from("accounts")
+    .select("credentials")
+    .eq("id", accountId)
+    .eq("workspace_id", ws.id)
+    .eq("platform", "reddit")
+    .maybeSingle();
+  if (!account?.credentials) back(path, { error: "That Reddit account isn't in this project." });
+  const creds = decryptJson<RedditCredentials>(account!.credentials);
+  await supabase
+    .from("accounts")
+    .update({ credentials: encryptJson({ ...creds, subreddit }), label: `u/${creds.username} → r/${subreddit}` })
+    .eq("id", accountId);
+  revalidatePath(`/w/${slug}`, "layout");
+  back(path, { saved: `u/${creds.username} now posts to r/${subreddit}.` });
 }
 
 export async function removeAccount(slug: string, accountId: string) {

@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { encryptJson } from "@/lib/crypto";
+import { decryptJson, encryptJson } from "@/lib/crypto";
 import type { ConnectResult } from "@/lib/platforms/adapters/shared";
 
 /**
@@ -15,18 +15,26 @@ export async function saveAccount(
   result: ConnectResult<unknown>,
   customLabel?: string | null,
 ): Promise<{ label: string; reconnected: boolean; error?: string }> {
-  const fields = {
-    credentials: encryptJson(result.credentials),
-    status: "connected",
-    last_error: null,
-  };
   const { data: existing } = await supabase
     .from("accounts")
-    .select("id, label")
+    .select("id, label, credentials")
     .eq("workspace_id", workspaceId)
     .eq("platform", platform)
     .eq("remote_id", result.remoteId)
     .maybeSingle();
+
+  // Settings kept alongside the tokens (e.g. a Reddit account's subreddit) survive a reconnect.
+  let previous: Record<string, unknown> = {};
+  try {
+    previous = existing?.credentials ? decryptJson<Record<string, unknown>>(existing.credentials) : {};
+  } catch {
+    previous = {};
+  }
+  const fields = {
+    credentials: encryptJson({ ...previous, ...(result.credentials as Record<string, unknown>) }),
+    status: "connected",
+    last_error: null,
+  };
 
   if (existing) {
     const label = customLabel || existing.label;

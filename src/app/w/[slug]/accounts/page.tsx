@@ -5,7 +5,7 @@ import { getPlatform, LIVE_PLATFORMS, PLATFORMS } from "@/lib/platforms/catalog"
 import { createClient } from "@/lib/supabase/server";
 import type { Account } from "@/lib/types";
 import { getWorkspace } from "@/lib/workspace";
-import { connectAccount, removeAccount } from "../actions";
+import { connectAccount, removeAccount, setSubreddit } from "../actions";
 
 export const metadata = { title: "Accounts" };
 
@@ -14,10 +14,10 @@ export default async function AccountsPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ error?: string; connected?: string; reconnected?: string; platform?: string }>;
+  searchParams: Promise<{ error?: string; connected?: string; reconnected?: string; saved?: string; platform?: string }>;
 }) {
   const { slug } = await params;
-  const { error, connected, reconnected, platform: openPlatform } = await searchParams;
+  const { error, connected, reconnected, saved, platform: openPlatform } = await searchParams;
   const ws = await getWorkspace(slug);
   const supabase = await createClient();
   const { data } = await supabase
@@ -34,6 +34,7 @@ export default async function AccountsPage({
       {error && <p className="notice-error">{error}</p>}
       {connected && <p className="notice-ok">Connected {connected}. Credentials are stored encrypted.</p>}
       {reconnected && <p className="notice-ok">Reconnected {reconnected} with fresh credentials.</p>}
+      {saved && <p className="notice-ok">{saved}</p>}
 
       <section className="space-y-3">
         <h2 className="font-semibold">Connected to {ws.name}</h2>
@@ -47,6 +48,13 @@ export default async function AccountsPage({
                 {getPlatform(a.platform)?.name}
                 {a.status === "error" && <span className="text-warn"> · Last post failed: {a.last_error}</span>}
               </div>
+              {a.platform === "reddit" && (
+                <form action={setSubreddit.bind(null, slug, a.id)} className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-muted">Posts to r/</span>
+                  <input name="subreddit" required placeholder="geoguessr" className="input w-40 px-2 py-1 text-xs" />
+                  <SubmitButton className="btn-ghost px-2 py-1 text-xs" pendingText="Saving…">Set</SubmitButton>
+                </form>
+              )}
             </div>
             {getPlatform(a.platform)?.connect === "oauth" && (
               <a href={`/api/oauth/${a.platform}/start?workspace=${slug}`} className="btn-ghost px-3 py-1 text-xs">Reconnect</a>

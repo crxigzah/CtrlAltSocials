@@ -155,14 +155,14 @@ export const PLATFORMS: Platform[] = [
   {
     id: "reddit",
     name: "Reddit",
-    status: "planned",
+    status: "live",
     connect: "oauth",
-    maxLength: 40000,
+    maxLength: 40300,
     signupUrl: "https://www.reddit.com/register/",
-    signupTip: "Each subreddit has its own self-promotion rules; read them before posting project links.",
+    signupTip: "New accounts can't post in many subreddits until they have some karma and age. Each subreddit has its own self-promotion rules; read them before posting project links.",
     handleMax: 20,
     bioMax: 200,
-    media: TEXT_ONLY,
+    media: { ...TEXT_ONLY, requiresText: true },
   },
 ];
 
@@ -219,6 +219,7 @@ export function postProblems(platform: Platform, text: string, media: MediaInfo[
   if (!text.trim() && media.length === 0) problems.push("nothing to post");
   if (r.requiresMedia && media.length === 0) problems.push(r.imageTypes.length ? "needs an image or video" : "needs a video");
   if (r.requiresText && !text.trim()) problems.push("needs text (the first line becomes the title)");
+  if (platform.id === "reddit" && text.trim() && [...(text.trim().split("\n")[0])].length > 300) problems.push("first line (the title) is over 300 characters");
   if (media.length === 0) return problems;
 
   if (r.maxItems === 0) return [...problems, "can't take attachments"];

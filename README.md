@@ -8,7 +8,7 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 
 - **Projects (workspaces):** each keeps its own accounts. A post can only target accounts in its own project; the database enforces this, not just the UI.
 - **Brand kit + setup checklist:** handle, bio, website and sign-up email per project, with a checklist of every platform's sign-up page, copy buttons, and warnings when the handle or bio is too long for a platform. You do the sign-ups yourself.
-- **Posting:** Bluesky (app password), Discord (channel webhook), and Threads, X, Instagram, Facebook Pages, YouTube and TikTok (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
+- **Posting:** Bluesky (app password), Discord (channel webhook), and Threads, X, Instagram, Facebook Pages, YouTube, TikTok and Reddit (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
 - **Images and video:** attach up to 20 files with alt text and drag-free reordering. The composer checks each platform's rules (count, file type, size, mixing images and video) before you can post. Files upload straight to a private Supabase Storage bucket and platforms get short-lived signed links.
 - **Per-account wording:** give X a shorter version or Instagram extra hashtags without writing separate posts.
 - **Calendar:** a month view per project, plus a "Coming up" list across every project on the home page.
@@ -16,7 +16,7 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Retry failed:** resend to just the accounts a post failed on; the ones that worked aren't posted to twice.
 - **Credentials** are encrypted with AES-256-GCM before they reach the database.
 
-Planned next: Reddit. Each needs a developer app registered with the platform.
+Every platform on the setup checklist can now be posted to. Each needs a developer app registered with the platform.
 
 ## Local development
 
@@ -91,6 +91,13 @@ The first line of the post becomes the video title and the whole text the descri
 3. Copy the client key and secret into `TIKTOK_CLIENT_KEY` and `TIKTOK_CLIENT_SECRET`.
 
 Until TikTok reviews the app, it only accepts private posts. CtrlAltSocials posts them as private and flags it in the history; submit the app for review to post publicly.
+
+**Reddit**
+1. [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) → create app → type **web app**, redirect URI `<APP_URL>/api/oauth/reddit/callback`.
+2. Copy the client ID (under the app name) and secret into `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`.
+3. After connecting, set which subreddit the account posts to on the Accounts tab.
+
+The first line of a post is the title and the rest the body; a body that's just a link makes a link post. Reddit is strict about self-promotion and new accounts, so read each subreddit's rules first.
 
 ## Scheduled posts
 
