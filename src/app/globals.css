@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0b0d12;
+  --color-panel: #12151c;
+  --color-raised: #1a1e27;
+  --color-line: #262b36;
+  --color-fg: #e7e9ee;
+  --color-muted: #9aa1b0;
+  --color-subtle: #6b7281;
+  --color-accent: #7c5cff;
+  --color-accent-fg: #ffffff;
+  --color-ok: #34d399;
+  --color-warn: #fbbf24;
+  --color-bad: #f87171;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition
+    disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+@layer components {
+  .card { @apply rounded-xl border border-line bg-panel p-5; }
+  .input {
+    @apply w-full rounded-lg border border-line bg-raised px-3 py-2 text-sm text-fg placeholder:text-subtle
+      focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30;
+  }
+  .field-label { @apply mb-1 block text-xs font-medium text-muted; }
+  .btn-primary { @apply btn bg-accent text-accent-fg hover:brightness-110; }
+  .btn-ghost { @apply btn border border-line text-fg hover:bg-raised; }
+  .btn-danger { @apply btn border border-bad/40 text-bad hover:bg-bad/10; }
+  .link { @apply text-accent hover:underline; }
+  .notice-error { @apply rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad; }
+  .notice-ok { @apply rounded-lg border border-ok/40 bg-ok/10 px-3 py-2 text-sm text-ok; }
+  .keycap {
+    @apply inline-flex items-center rounded-md border border-line border-b-[3px] bg-raised px-1.5 py-0.5
+      font-mono text-[0.8em] font-semibold leading-none;
+  }
+  .badge { @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium; }
+}
