@@ -1,0 +1,51 @@
+import "server-only";
+
+export class PlatformError extends Error {}
+
+export type ConnectResult<C> = {
+  credentials: C;
+  label: string;
+  /** The platform's own id for the account, so reconnecting updates it instead of adding a duplicate. */
+  remoteId: string;
+};
+
+/** `credentials` comes back when the adapter refreshed a token during publishing and it must be saved. */
+export type PublishResult<C> = { url: string | null; credentials?: C };
+
+type Base<C> = {
+  publish(credentials: C, text: string): Promise<PublishResult<C>>;
+};
+
+/** Platforms connected by typing something into a form (an app password, a webhook URL). */
+export type FormAdapter<C> = Base<C> & {
+  kind: "form";
+  connect(input: FormData): Promise<ConnectResult<C>>;
+};
+
+/** Platforms connected by signing in on the platform's own site. */
+export type OAuthAdapter<C> = Base<C> & {
+  kind: "oauth";
+  /** Env vars this platform needs; connecting is disabled until they're set. */
+  env: string[];
+  authorizeUrl(opts: { state: string; redirectUri: string; codeChallenge: string }): string;
+  exchange(opts: { code: string; redirectUri: string; codeVerifier: string }): Promise<ConnectResult<C>>;
+};
+
+export type Adapter<C> = FormAdapter<C> | OAuthAdapter<C>;
+
+export async function readError(res: Response): Promise<string> {
+  const text = await res.text().catch(() => "");
+  try {
+    const json = JSON.parse(text);
+    const msg = json.detail || json.error_description || json.error?.message || json.message || json.title || json.error;
+    return typeof msg === "string" ? msg : text;
+  } catch {
+    return text || res.statusText;
+  }
+}
+
+export function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new PlatformError(`${name} isn't set on the server.`);
+  return value;
+}

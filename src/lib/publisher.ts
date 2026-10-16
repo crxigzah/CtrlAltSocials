@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { decryptJson } from "@/lib/crypto";
+import { decryptJson, encryptJson } from "@/lib/crypto";
 import { describeError, getAdapter } from "@/lib/platforms/adapters";
 import { getPlatform, postLength } from "@/lib/platforms/catalog";
 import type { Post, PostStatus } from "@/lib/types";
@@ -25,8 +25,12 @@ export async function publishPost(supabase: SupabaseClient, post: Post): Promise
 
   const targets = data ?? [];
   for (const target of targets.filter((t) => t.status === "pending")) {
-    const { accountError, ...update } = await sendOne(target, post.body);
+    const { accountError, newCredentials, ...update } = await sendOne(target, post.body);
     await supabase.from("post_targets").update(update).eq("id", target.id);
+    if (newCredentials !== undefined && target.account) {
+      // A token was refreshed on the way; losing it would lock the account out.
+      await supabase.from("accounts").update({ credentials: encryptJson(newCredentials) }).eq("id", target.account.id);
+    }
     target.status = update.status;
     if (accountError && target.account) {
       await supabase.from("accounts").update({ status: "error", last_error: update.error }).eq("id", target.account.id);
@@ -42,8 +46,8 @@ export async function publishPost(supabase: SupabaseClient, post: Post): Promise
 }
 
 async function sendOne(target: TargetRow, body: string) {
-  const fail = (error: string, accountError = false) =>
-    ({ status: "failed" as const, error, sent_at: null, remote_url: null, accountError });
+  const fail = (error: string, accountError = false, newCredentials?: unknown) =>
+    ({ status: "failed" as const, error, sent_at: null, remote_url: null, accountError, newCredentials });
 
   const account = target.account;
   if (!account || !account.credentials) return fail("This account was removed or never finished connecting.");
@@ -56,8 +60,15 @@ async function sendOne(target: TargetRow, body: string) {
 
   try {
     const result = await adapter.publish(decryptJson(account.credentials), body);
-    return { status: "sent" as const, error: null, sent_at: new Date().toISOString(), remote_url: result.url, accountError: false };
+    return {
+      status: "sent" as const,
+      error: null,
+      sent_at: new Date().toISOString(),
+      remote_url: result.url,
+      accountError: false,
+      newCredentials: result.credentials,
+    };
   } catch (err) {
-    return fail(describeError(err), true);
+    return fail(describeError(err), true, (err as { credentials?: unknown }).credentials);
   }
 }

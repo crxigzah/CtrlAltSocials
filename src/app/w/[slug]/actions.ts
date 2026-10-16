@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { encryptJson } from "@/lib/crypto";
+import { saveAccount } from "@/lib/accounts";
 import { describeError, getAdapter } from "@/lib/platforms/adapters";
+import type { FormAdapter } from "@/lib/platforms/adapters/shared";
 import { getPlatform, postLength } from "@/lib/platforms/catalog";
 import { publishPost } from "@/lib/publisher";
 import { createClient } from "@/lib/supabase/server";
@@ -65,20 +66,19 @@ export async function connectAccount(slug: string, formData: FormData) {
   const path = `/w/${slug}/accounts`;
   const platform = String(formData.get("platform") ?? "");
   const adapter = getAdapter(platform);
-  if (!adapter) back(path, { error: "That platform can't be connected yet." });
+  if (adapter?.kind !== "form") back(path, { error: "That platform can't be connected with a form." });
 
-  let saved: { credentials: string; label: string };
+  let result;
   try {
-    const { credentials, label } = await adapter!.connect(formData);
-    saved = { credentials: encryptJson(credentials), label: optional(formData.get("label")) ?? label };
+    result = await (adapter as FormAdapter<unknown>).connect(formData);
   } catch (err) {
     return back(path, { error: describeError(err), platform });
   }
   const supabase = await createClient();
-  const { error } = await supabase.from("accounts").insert({ workspace_id: ws.id, platform, ...saved, status: "connected" });
-  if (error) back(path, { error: error.message });
+  const saved = await saveAccount(supabase, ws.id, platform, result, optional(formData.get("label")));
+  if (saved.error) back(path, { error: saved.error });
   revalidatePath(`/w/${slug}`, "layout");
-  back(path, { connected: saved.label });
+  back(path, { [saved.reconnected ? "reconnected" : "connected"]: saved.label });
 }
 
 export async function removeAccount(slug: string, accountId: string) {

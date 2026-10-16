@@ -8,10 +8,10 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 
 - **Projects (workspaces):** each keeps its own accounts. A post can only target accounts in its own project; the database enforces this, not just the UI.
 - **Brand kit + setup checklist:** handle, bio, website and sign-up email per project, with a checklist of every platform's sign-up page, copy buttons, and warnings when the handle or bio is too long for a platform. You do the sign-ups yourself.
-- **Posting:** Bluesky (app password) and Discord (channel webhook), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
+- **Posting:** Bluesky (app password), Discord (channel webhook), Threads and X (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
 - **Credentials** are encrypted with AES-256-GCM before they reach the database.
 
-Planned next: Threads, Reddit, X, Instagram, Facebook Pages, YouTube, TikTok. Each needs a developer app registered with the platform.
+Planned next: Instagram, Facebook Pages, Reddit, YouTube, TikTok. Each needs a developer app registered with the platform.
 
 ## Setup
 
@@ -28,6 +28,25 @@ Planned next: Threads, Reddit, X, Instagram, Facebook Pages, YouTube, TikTok. Ea
    npm run dev
    ```
 4. **Lock down sign-ups:** after creating your own login, turn off new sign-ups in Supabase → Authentication → Sign In / Providers so nobody else can make an account on your deployment.
+
+## Connecting Threads and X
+
+Both sign in on the platform's own site, so each needs a developer app and `APP_URL` set to the app's public address. Connecting only works for the account you're signed into in that browser, so sign into the right project's account first (a separate browser profile per project makes this painless). Connecting the same account again refreshes it rather than adding a duplicate.
+
+**Threads**
+1. [developers.facebook.com](https://developers.facebook.com/apps) → Create app → use case "Access the Threads API".
+2. Add permissions `threads_basic` and `threads_content_publish`.
+3. Under Threads settings, set the redirect callback URL to `<APP_URL>/api/oauth/threads/callback`.
+4. Copy the Threads app ID and secret into `THREADS_APP_ID` and `THREADS_APP_SECRET`.
+5. While the app is in development, add the project's Threads account as a Threads tester (App roles → Roles) and accept the invite in Threads → Settings → Account → Website permissions.
+
+Tokens last 60 days and refresh themselves whenever a post goes out in the last week, so post at least once every couple of months or reconnect.
+
+**X**
+1. [developer.x.com](https://developer.x.com/en/portal/dashboard) → create a project and app. Posting is billed per request.
+2. User authentication settings → OAuth 2.0, type "Web App", permissions "Read and write".
+3. Callback URI: `<APP_URL>/api/oauth/x/callback`.
+4. Copy the OAuth 2.0 client ID and secret into `X_CLIENT_ID` and `X_CLIENT_SECRET`.
 
 ## Scheduled posts
 
