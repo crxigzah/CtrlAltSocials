@@ -16,6 +16,10 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 
 Planned next: Reddit, YouTube, TikTok. Each needs a developer app registered with the platform.
 
+## Local development
+
+With Docker running, `npx supabase start` brings up Postgres, Auth and Storage locally and applies every migration. Point `.env.local` at the URL and keys it prints, then `npm run dev`.
+
 ## Setup
 
 1. **Supabase:** create a project, then run `supabase/migrations/*.sql` in the SQL editor (or `supabase db push`).

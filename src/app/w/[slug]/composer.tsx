@@ -41,7 +41,8 @@ function localInputValue(date: Date) {
 
 export function Composer({ slug, workspaceId, accounts, action }: Props) {
   const [body, setBody] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(accounts.filter((a) => a.status === "connected").map((a) => a.id)));
+  // Everything's ticked to start with; accounts with a problem show a "check" badge instead of silently dropping out.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(accounts.map((a) => a.id)));
   const [when, setWhen] = useState<"now" | "later">("now");
   const [localTime, setLocalTime] = useState(() => localInputValue(new Date(Date.now() + 60 * 60 * 1000)));
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -72,7 +73,10 @@ export function Composer({ slug, workspaceId, accounts, action }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [accounts, selected, body, attachments, overrides],
   );
-  const blocked = checks.filter((c) => c.problems.length);
+  // Until something's been written or attached, "nothing to post" is just noise.
+  const pristine = !body.trim() && attachments.length === 0 && Object.values(overrides).every((t) => !t.trim());
+  const shown = pristine ? checks.map((c) => ({ ...c, problems: c.problems.filter((p) => p !== "nothing to post") })) : checks;
+  const blocked = shown.filter((c) => c.problems.length);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -190,7 +194,7 @@ export function Composer({ slug, workspaceId, accounts, action }: Props) {
         <div className="flex flex-wrap gap-2">
           {accounts.map((a) => {
             const on = selected.has(a.id);
-            const check = checks.find((c) => c.account.id === a.id);
+            const check = shown.find((c) => c.account.id === a.id);
             const bad = check && check.problems.length > 0;
             return (
               <label

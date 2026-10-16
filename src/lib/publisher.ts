@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptJson, encryptJson } from "@/lib/crypto";
-import { describeError, getAdapter } from "@/lib/platforms/adapters";
+import { describeError, getAdapter, isNetworkError } from "@/lib/platforms/adapters";
 import type { MediaFile } from "@/lib/platforms/adapters/shared";
 import { getPlatform, postProblems } from "@/lib/platforms/catalog";
 import type { Post, PostStatus } from "@/lib/types";
@@ -118,6 +118,7 @@ async function sendOne(target: TargetRow, body: string, media: MediaFile[]) {
       newCredentials: result.credentials,
     };
   } catch (err) {
-    return fail(describeError(err), true, (err as { credentials?: unknown }).credentials);
+    // A network blip says nothing about the account itself, so don't flag it.
+    return fail(describeError(err), !isNetworkError(err), (err as { credentials?: unknown }).credentials);
   }
 }
