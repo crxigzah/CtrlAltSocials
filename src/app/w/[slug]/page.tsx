@@ -31,10 +31,10 @@ export default async function ComposePage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ error?: string; posted?: string; scheduled?: string; edit?: string; duplicate?: string; text?: string; imported?: string }>;
+  searchParams: Promise<{ error?: string; posted?: string; scheduled?: string; edit?: string; duplicate?: string; text?: string; imported?: string; joined?: string }>;
 }) {
   const { slug } = await params;
-  const { error, posted, scheduled, edit, duplicate, text: sharedText, imported } = await searchParams;
+  const { error, posted, scheduled, edit, duplicate, text: sharedText, imported, joined } = await searchParams;
   const ws = await getWorkspace(slug);
   const supabase = await createClient();
 
@@ -78,6 +78,7 @@ export default async function ComposePage({
       {scheduled === "1" && <p className="notice-ok">Scheduled.</p>}
       {queuedAt && <p className="notice-ok">Added to the queue for {fmt(queuedAt)}.</p>}
       {scheduled === "draft" && <p className="notice-ok">Draft saved.</p>}
+      {joined && <p className="notice-ok">You&apos;ve joined {ws.name} as an editor.</p>}
       {imported && <p className="notice-ok">Imported {imported} post{imported === "1" ? "" : "s"}.</p>}
       {scheduled === "updated" && <p className="notice-ok">Changes saved.</p>}
       {edit && !draft && <p className="notice-error">That post has already gone out or been cancelled, so it can&apos;t be edited.</p>}
@@ -95,8 +96,14 @@ export default async function ComposePage({
       {(accounts ?? []).length === 0 ? (
         <div className="card text-center">
           <p className="font-medium">No accounts connected to {ws.name} yet.</p>
-          <p className="mt-1 text-sm text-muted">Connect one and it&apos;ll show up here to post to.</p>
-          <Link href={`/w/${slug}/accounts`} className="btn-primary mt-4">Connect an account</Link>
+          {ws.role === "owner" ? (
+            <>
+              <p className="mt-1 text-sm text-muted">Connect one and it&apos;ll show up here to post to.</p>
+              <Link href={`/w/${slug}/accounts`} className="btn-primary mt-4">Connect an account</Link>
+            </>
+          ) : (
+            <p className="mt-1 text-sm text-muted">The project&apos;s owner needs to connect its accounts first.</p>
+          )}
         </div>
       ) : (
         <Composer

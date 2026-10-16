@@ -6,13 +6,14 @@ import { encryptJson } from "@/lib/crypto";
 import { describeError } from "@/lib/platforms/adapters";
 import { parseWebhook } from "@/lib/platforms/adapters/discord";
 import { isValidTimeZone } from "@/lib/slots";
+import { createHash, randomBytes } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
-import { getWorkspace } from "@/lib/workspace";
+import { requireOwner } from "@/lib/workspace";
 
 const back = (slug: string, params: Record<string, string>) => redirect(`/w/${slug}/preferences?${new URLSearchParams(params)}`);
 
 export async function setTimezone(slug: string, formData: FormData) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const timezone = String(formData.get("timezone") ?? "").trim();
   if (!isValidTimeZone(timezone)) back(slug, { error: `"${timezone}" isn't a timezone name, e.g. Europe/London.` });
   const supabase = await createClient();
@@ -22,7 +23,7 @@ export async function setTimezone(slug: string, formData: FormData) {
 }
 
 export async function addSlots(slug: string, formData: FormData) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const days = formData.getAll("weekday").map(Number).filter((d) => d >= 1 && d <= 7);
   const [h, m] = String(formData.get("time") ?? "").split(":").map(Number);
   if (!days.length) back(slug, { error: "Tick at least one day." });
@@ -36,14 +37,14 @@ export async function addSlots(slug: string, formData: FormData) {
 }
 
 export async function removeSlot(slug: string, slotId: string) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const supabase = await createClient();
   await supabase.from("posting_slots").delete().eq("id", slotId).eq("workspace_id", ws.id);
   revalidatePath(`/w/${slug}`, "layout");
 }
 
 export async function setAlertWebhook(slug: string, formData: FormData) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const raw = String(formData.get("webhook_url") ?? "").trim();
   const supabase = await createClient();
   if (!raw) {
@@ -76,7 +77,7 @@ export async function setAlertWebhook(slug: string, formData: FormData) {
 }
 
 export async function setLinkTracking(slug: string, formData: FormData) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const enabled = formData.get("utm_enabled") === "on";
   if (enabled && !ws.website) back(slug, { error: "Add the project's website on the Brand kit tab first; only links to it get tagged." });
   const campaign = String(formData.get("utm_campaign") ?? "").trim().replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || null;
@@ -87,7 +88,7 @@ export async function setLinkTracking(slug: string, formData: FormData) {
 }
 
 export async function addSnippet(slug: string, formData: FormData) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const name = String(formData.get("name") ?? "").trim().slice(0, 60);
   const body = String(formData.get("body") ?? "").trim().slice(0, 2000);
   if (!name || !body) back(slug, { error: "Give the snippet a name and some text." });
@@ -99,8 +100,43 @@ export async function addSnippet(slug: string, formData: FormData) {
 }
 
 export async function removeSnippet(slug: string, snippetId: string) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const supabase = await createClient();
   await supabase.from("snippets").delete().eq("id", snippetId).eq("workspace_id", ws.id);
   revalidatePath(`/w/${slug}`, "layout");
+}
+
+// --- Members ---------------------------------------------------------------------
+
+/** Makes a single-use invite link (valid 7 days). The secret is shown once; only its hash is stored. */
+export async function createInvite(slug: string, formData: FormData) {
+  const ws = await requireOwner(slug);
+  const email = String(formData.get("email") ?? "").trim().toLowerCase() || null;
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) back(slug, { error: "That email address doesn't look right." });
+  const token = randomBytes(24).toString("base64url");
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("workspace_invites")
+    .insert({ workspace_id: ws.id, token_hash: createHash("sha256").update(token).digest("hex"), email });
+  if (error) back(slug, { error: error.message });
+  revalidatePath(`/w/${slug}/preferences`);
+  back(slug, { invite: token });
+}
+
+export async function revokeInvite(slug: string, inviteId: string) {
+  const ws = await requireOwner(slug);
+  const supabase = await createClient();
+  await supabase.from("workspace_invites").delete().eq("id", inviteId).eq("workspace_id", ws.id);
+  revalidatePath(`/w/${slug}/preferences`);
+  // Redirecting also clears a just-created invite link out of the address bar.
+  back(slug, { saved: "Invite cancelled." });
+}
+
+export async function removeMember(slug: string, userId: string) {
+  const ws = await requireOwner(slug);
+  const supabase = await createClient();
+  // RLS refuses to remove the owner row, whatever is sent.
+  await supabase.from("workspace_members").delete().eq("workspace_id", ws.id).eq("user_id", userId).neq("role", "owner");
+  revalidatePath(`/w/${slug}`, "layout");
+  back(slug, { saved: "Member removed." });
 }

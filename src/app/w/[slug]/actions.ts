@@ -9,11 +9,12 @@ import { SUBREDDIT_RE, type RedditCredentials } from "@/lib/platforms/adapters/r
 import type { ConnectResult, FormAdapter } from "@/lib/platforms/adapters/shared";
 import { getPlatform, postProblems, UPLOAD_TYPES, type MediaInfo } from "@/lib/platforms/catalog";
 import { publishPost, retryPost } from "@/lib/publisher";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { Post } from "@/lib/types";
 import { nextFreeSlot } from "@/lib/slots";
 import { tailorPost } from "@/lib/tailor";
-import { getWorkspace } from "@/lib/workspace";
+import { getWorkspace, requireOwner } from "@/lib/workspace";
 
 const back = (path: string, params: Record<string, string>) => redirect(`${path}?${new URLSearchParams(params)}`);
 const optional = (v: FormDataEntryValue | null) => String(v ?? "").trim() || null;
@@ -21,7 +22,7 @@ const optional = (v: FormDataEntryValue | null) => String(v ?? "").trim() || nul
 // --- Brand kit ---------------------------------------------------------------
 
 export async function updateBrandKit(slug: string, formData: FormData) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const path = `/w/${slug}/settings`;
   const handle = optional(formData.get("handle"))?.replace(/^@/, "") ?? null;
   const supabase = await createClient();
@@ -43,7 +44,7 @@ export async function updateBrandKit(slug: string, formData: FormData) {
 }
 
 export async function deleteWorkspace(slug: string, formData: FormData) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   if (String(formData.get("confirm") ?? "") !== ws.name) {
     back(`/w/${slug}/settings`, { error: `Type "${ws.name}" to confirm deleting the project.` });
   }
@@ -61,7 +62,7 @@ export async function deleteWorkspace(slug: string, formData: FormData) {
 // --- Setup checklist ---------------------------------------------------------
 
 export async function toggleSetup(slug: string, platform: string, done: boolean) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   if (!getPlatform(platform)) return;
   const supabase = await createClient();
   if (done) await supabase.from("setup_progress").upsert({ workspace_id: ws.id, platform });
@@ -72,7 +73,7 @@ export async function toggleSetup(slug: string, platform: string, done: boolean)
 // --- Accounts ----------------------------------------------------------------
 
 export async function connectAccount(slug: string, formData: FormData) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const path = `/w/${slug}/accounts`;
   const platform = String(formData.get("platform") ?? "");
   const adapter = getAdapter(platform);
@@ -92,7 +93,7 @@ export async function connectAccount(slug: string, formData: FormData) {
 }
 
 export async function pickConnection(slug: string, pendingId: string, index: number) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const path = `/w/${slug}/accounts`;
   const supabase = await createClient();
   const { data: pending } = await supabase
@@ -113,7 +114,7 @@ export async function pickConnection(slug: string, pendingId: string, index: num
 }
 
 export async function setSubreddit(slug: string, accountId: string, formData: FormData) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const path = `/w/${slug}/accounts`;
   const subreddit = String(formData.get("subreddit") ?? "").trim().replace(/^\/?r\//i, "");
   if (!SUBREDDIT_RE.test(subreddit)) back(path, { error: "That isn't a valid subreddit name." });
@@ -136,7 +137,7 @@ export async function setSubreddit(slug: string, accountId: string, formData: Fo
 }
 
 export async function removeAccount(slug: string, accountId: string) {
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const supabase = await createClient();
   await supabase.from("accounts").delete().eq("id", accountId).eq("workspace_id", ws.id);
   revalidatePath(`/w/${slug}`, "layout");
@@ -249,7 +250,9 @@ export async function createPost(slug: string, formData: FormData) {
   await removeUnreferenced(supabase, dropped);
 
   if (when === "now") {
-    const status = await publishPost(supabase, post);
+    // Membership is already checked above. Sending uses the service role because it may
+    // need to save a refreshed token on the account, which editors can't write to.
+    const status = await publishPost(createAdminClient(), post);
     revalidatePath(path);
     back(path, { posted: status });
   }
@@ -276,7 +279,7 @@ export async function retryFailed(slug: string, postId: string) {
   const supabase = await createClient();
   const { data: owned } = await supabase.from("posts").select("id").eq("id", postId).eq("workspace_id", ws.id).maybeSingle();
   if (!owned) back(`/w/${slug}`, { error: "That post isn't in this project." });
-  const status = await retryPost(supabase, postId);
+  const status = await retryPost(createAdminClient(), postId);
   revalidatePath(`/w/${slug}`);
   back(`/w/${slug}`, status ? { posted: status } : { error: "That post is already sending or has nothing left to retry." });
 }

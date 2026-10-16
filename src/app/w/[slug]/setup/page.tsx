@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PlatformIcon } from "@/components/platform-icon";
 import { PLATFORMS } from "@/lib/platforms/catalog";
 import { createClient } from "@/lib/supabase/server";
-import { getWorkspace } from "@/lib/workspace";
+import { requireOwner } from "@/lib/workspace";
 import { CopyButton } from "./copy-button";
 import { DoneToggle } from "./done-toggle";
 
@@ -10,7 +10,7 @@ export const metadata = { title: "Setup checklist" };
 
 export default async function SetupPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const supabase = await createClient();
   const [{ data: progress }, { data: accounts }] = await Promise.all([
     supabase.from("setup_progress").select("platform").eq("workspace_id", ws.id),

@@ -34,5 +34,6 @@ export async function signUp(formData: FormData) {
   });
   if (error) redirect(`/login?mode=signup&error=${encodeURIComponent(error.message)}`);
   if (!data.session) redirect("/login?message=check-email");
-  redirect("/");
+  // Signing up from an invite link carries on to it.
+  redirect(safeNext(formData.get("next")));
 }

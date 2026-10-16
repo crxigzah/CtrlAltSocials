@@ -18,10 +18,11 @@ export default async function WorkspaceLayout({
           <span className="text-subtle">/</span>
           <span className="h-3 w-3 rounded" style={{ background: ws.color }} />
           <span className="font-medium">{ws.name}</span>
+          {ws.role === "editor" && <span className="badge bg-raised text-muted">Editor</span>}
         </span>
       </AppHeader>
       <div className="border-b border-line">
-        <WorkspaceNav slug={ws.slug} />
+        <WorkspaceNav slug={ws.slug} isOwner={ws.role === "owner"} />
       </div>
       <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
     </>

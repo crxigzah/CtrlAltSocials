@@ -1,8 +1,10 @@
 import { SubmitButton } from "@/components/submit-button";
 import { formatMinute, nextFreeSlot, WEEKDAYS } from "@/lib/slots";
 import { createClient } from "@/lib/supabase/server";
-import { getWorkspace } from "@/lib/workspace";
-import { addSlots, addSnippet, removeSlot, removeSnippet, setAlertWebhook, setLinkTracking, setTimezone } from "./actions";
+import { requireOwner } from "@/lib/workspace";
+import { CopyButton } from "../setup/copy-button";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { addSlots, addSnippet, createInvite, removeMember, removeSlot, removeSnippet, revokeInvite, setAlertWebhook, setLinkTracking, setTimezone } from "./actions";
 
 export const metadata = { title: "Settings" };
 
@@ -11,17 +13,29 @@ export default async function PreferencesPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ error?: string; saved?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; invite?: string }>;
 }) {
   const { slug } = await params;
-  const { error, saved } = await searchParams;
-  const ws = await getWorkspace(slug);
+  const { error, saved, invite } = await searchParams;
+  const ws = await requireOwner(slug);
   const supabase = await createClient();
   const [{ data: slots }, { data: snippets }, { data: queued }] = await Promise.all([
     supabase.from("posting_slots").select("id, weekday, minute_of_day").eq("workspace_id", ws.id).order("minute_of_day"),
     supabase.from("snippets").select("id, name, body").eq("workspace_id", ws.id).order("created_at"),
     supabase.from("posts").select("scheduled_at").eq("workspace_id", ws.id).eq("status", "scheduled").gte("scheduled_at", new Date().toISOString()),
   ]);
+  const [{ data: members }, { data: invites }] = await Promise.all([
+    supabase.from("workspace_members").select("user_id, role, created_at").eq("workspace_id", ws.id).order("created_at"),
+    supabase.from("workspace_invites").select("id, email, expires_at").eq("workspace_id", ws.id).gt("expires_at", new Date().toISOString()).order("created_at"),
+  ]);
+  // Emails live in Supabase Auth, which only the service role can read; this page is owner-only.
+  const admin = createAdminClient();
+  const emails = new Map<string, string>();
+  for (const m of members ?? []) {
+    const { data } = await admin.auth.admin.getUserById(m.user_id);
+    if (data.user?.email) emails.set(m.user_id, data.user.email);
+  }
+  const inviteUrl = invite ? `${(process.env.APP_URL ?? "").replace(/\/$/, "")}/invite/${invite}` : null;
   const next = nextFreeSlot(slots ?? [], ws.timezone, (queued ?? []).map((p) => new Date(p.scheduled_at)));
   const byTime = new Map<number, { id: string; weekday: number }[]>();
   for (const s of slots ?? []) byTime.set(s.minute_of_day, [...(byTime.get(s.minute_of_day) ?? []), s]);
@@ -30,6 +44,52 @@ export default async function PreferencesPage({
     <div className="max-w-2xl space-y-8">
       {error && <p className="notice-error">{error}</p>}
       {saved && <p className="notice-ok">{saved}</p>}
+
+      <section className="card space-y-4">
+        <div>
+          <h2 className="font-semibold">Members</h2>
+          <p className="text-sm text-muted">
+            Editors can write, schedule and import posts and see insights. Only you can connect accounts or change settings.
+          </p>
+        </div>
+        {inviteUrl && (
+          <div className="space-y-2 rounded-lg border border-ok/40 bg-ok/10 p-3 text-sm">
+            <p className="text-ok">Invite link created. Send it to them; it works once and expires in 7 days. You won&apos;t see it again.</p>
+            <div className="flex items-start gap-2">
+              <code className="min-w-0 flex-1 break-all font-mono text-xs">{inviteUrl}</code>
+              <CopyButton value={inviteUrl} />
+            </div>
+            {!process.env.APP_URL && <p className="text-xs text-warn">APP_URL isn&apos;t set, so add your site&apos;s address in front of /invite/….</p>}
+            {process.env.ALLOWED_EMAILS?.trim() && <p className="text-xs text-warn">ALLOWED_EMAILS is set, so add their email to it too or they won&apos;t be let in.</p>}
+          </div>
+        )}
+        <ul className="divide-y divide-line rounded-lg border border-line text-sm">
+          {(members ?? []).map((m) => (
+            <li key={m.user_id} className="flex items-center gap-3 px-3 py-2">
+              <span className="min-w-0 flex-1 truncate">{emails.get(m.user_id) ?? "Unknown user"}</span>
+              <span className={`badge ${m.role === "owner" ? "bg-accent/15 text-accent" : "bg-raised text-muted"}`}>{m.role === "owner" ? "Owner" : "Editor"}</span>
+              {m.role !== "owner" && (
+                <form action={removeMember.bind(null, slug, m.user_id)}>
+                  <button className="text-xs text-muted hover:text-bad">Remove</button>
+                </form>
+              )}
+            </li>
+          ))}
+          {(invites ?? []).map((i) => (
+            <li key={i.id} className="flex items-center gap-3 px-3 py-2 text-muted">
+              <span className="min-w-0 flex-1 truncate">Invite{i.email ? ` for ${i.email}` : ""} (unused)</span>
+              <span className="text-xs">expires {new Date(i.expires_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+              <form action={revokeInvite.bind(null, slug, i.id)}>
+                <button className="text-xs hover:text-bad">Cancel</button>
+              </form>
+            </li>
+          ))}
+        </ul>
+        <form action={createInvite.bind(null, slug)} className="flex flex-wrap gap-2">
+          <input name="email" type="email" placeholder="Their email (optional: locks the link to it)" className="input min-w-0 flex-1" />
+          <SubmitButton className="btn-ghost" pendingText="Creating…">Create invite link</SubmitButton>
+        </form>
+      </section>
 
       <section className="card space-y-4">
         <div>

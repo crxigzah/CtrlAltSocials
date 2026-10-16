@@ -37,7 +37,7 @@ export default async function LoginPage({
           {isSignup ? (
             <>Already have an account? <Link href="/login" className="link">Sign in</Link></>
           ) : (
-            <>New here? <Link href="/login?mode=signup" className="link">Create an account</Link></>
+            <>New here? <Link href={`/login?mode=signup${next !== "/" ? `&next=${encodeURIComponent(next)}` : ""}`} className="link">Create an account</Link></>
           )}
         </p>
       </div>

@@ -1,5 +1,5 @@
 import { SubmitButton } from "@/components/submit-button";
-import { getWorkspace } from "@/lib/workspace";
+import { requireOwner } from "@/lib/workspace";
 import { deleteWorkspace, updateBrandKit } from "../actions";
 
 export const metadata = { title: "Brand kit" };
@@ -13,7 +13,7 @@ export default async function SettingsPage({
 }) {
   const { slug } = await params;
   const { error, saved, welcome } = await searchParams;
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
 
   return (
     <div className="max-w-2xl space-y-8">

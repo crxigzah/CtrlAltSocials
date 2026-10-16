@@ -5,7 +5,7 @@ import { decryptJson, encryptJson } from "@/lib/crypto";
 import { describeError, getOAuthAdapter } from "@/lib/platforms/adapters";
 import { OAUTH_COOKIE, redirectUri, type OAuthPending } from "@/lib/oauth";
 import { createClient } from "@/lib/supabase/server";
-import { getWorkspace } from "@/lib/workspace";
+import { requireOwner } from "@/lib/workspace";
 
 function sameString(a: string, b: string) {
   const x = Buffer.from(a);
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return finish("/", { error: "That sign-in link expired or didn't match. Start connecting the account again." });
   }
 
-  const ws = await getWorkspace(pending.slug);
+  const ws = await requireOwner(pending.slug);
   const accountsPath = `/w/${ws.slug}/accounts`;
   if (q.get("error")) {
     return finish(accountsPath, { error: q.get("error_description") || "The connection was cancelled." });

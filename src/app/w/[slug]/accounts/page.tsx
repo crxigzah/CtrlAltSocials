@@ -4,7 +4,7 @@ import { missingEnv } from "@/lib/platforms/adapters";
 import { getPlatform, LIVE_PLATFORMS, PLATFORMS } from "@/lib/platforms/catalog";
 import { createClient } from "@/lib/supabase/server";
 import type { Account } from "@/lib/types";
-import { getWorkspace } from "@/lib/workspace";
+import { requireOwner } from "@/lib/workspace";
 import { connectAccount, removeAccount, setSubreddit } from "../actions";
 
 export const metadata = { title: "Accounts" };
@@ -18,7 +18,7 @@ export default async function AccountsPage({
 }) {
   const { slug } = await params;
   const { error, connected, reconnected, saved, platform: openPlatform } = await searchParams;
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const supabase = await createClient();
   const { data } = await supabase
     .from("accounts")

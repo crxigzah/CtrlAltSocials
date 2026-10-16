@@ -5,7 +5,7 @@ import { decryptJson } from "@/lib/crypto";
 import type { ConnectResult } from "@/lib/platforms/adapters/shared";
 import { getPlatform, type PlatformId } from "@/lib/platforms/catalog";
 import { createClient } from "@/lib/supabase/server";
-import { getWorkspace } from "@/lib/workspace";
+import { requireOwner } from "@/lib/workspace";
 import { pickConnection } from "../../actions";
 
 export const metadata = { title: "Choose an account" };
@@ -19,7 +19,7 @@ export default async function PickPage({
 }) {
   const { slug } = await params;
   const { id = "" } = await searchParams;
-  const ws = await getWorkspace(slug);
+  const ws = await requireOwner(slug);
   const supabase = await createClient();
   const { data: pending } = await supabase
     .from("pending_connections")

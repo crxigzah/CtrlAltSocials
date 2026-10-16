@@ -11,15 +11,15 @@ import { LocalTime } from "@/components/local-time";
 
 export const metadata = { title: "Projects" };
 
-type Row = Workspace & { accounts: Pick<Account, "id" | "platform" | "status">[] };
+type Row = Workspace & { accounts: Pick<Account, "id" | "platform" | "status">[]; workspace_members: { role: string; user_id: string }[] };
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
-  await requireUser();
+  const user = await requireUser();
   const supabase = await createClient();
   const { data } = await supabase
     .from("workspaces")
-    .select("*, accounts(id, platform, status)")
+    .select("*, accounts(id, platform, status), workspace_members(role, user_id)")
     .order("created_at")
     .returns<Row[]>();
   const workspaces = data ?? [];
@@ -55,7 +55,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
                 <span className="h-9 w-9 rounded-lg" style={{ background: w.color }} />
                 <div className="min-w-0">
                   <div className="truncate font-semibold">{w.name}</div>
-                  <div className="text-xs text-muted">{w.handle ? `@${w.handle}` : "No handle set"}</div>
+                  <div className="text-xs text-muted">
+                    {w.handle ? `@${w.handle}` : "No handle set"}
+                    {w.workspace_members.find((m) => m.user_id === user.id)?.role === "editor" && " · Editor"}
+                  </div>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-1.5">
