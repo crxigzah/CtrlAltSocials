@@ -3,12 +3,15 @@ import { PlatformIcon } from "@/components/platform-icon";
 import { LIVE_PLATFORMS } from "@/lib/platforms/catalog";
 import { createClient } from "@/lib/supabase/server";
 import type { Account, Post, PostTarget } from "@/lib/types";
+import { aiEnabled } from "@/lib/tailor";
 import { getWorkspace } from "@/lib/workspace";
 import { cancelPost, createPost, retryFailed } from "./actions";
 import { Composer, type Draft } from "./composer";
 import { LocalTime } from "@/components/local-time";
 
 export const metadata = { title: "Compose" };
+// "Post now" publishes inside the server action, and Threads/Instagram video can take a while to process.
+export const maxDuration = 60;
 
 type PostRow = Post & { post_media: { id: string; mime: string; alt: string | null; position: number }[]; post_targets: (PostTarget & { account: Pick<Account, "label" | "platform"> | null })[] };
 
@@ -74,6 +77,7 @@ export default async function ComposePage({
         <Composer
           key={draft ? `${draft.postId ?? "copy"}-${edit ?? duplicate}` : "new"}
           draft={draft ?? undefined}
+          aiEnabled={aiEnabled()}
           slug={slug}
           workspaceId={ws.id}
           accounts={accounts as Pick<Account, "id" | "platform" | "label" | "status">[]}

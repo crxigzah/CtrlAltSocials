@@ -13,6 +13,7 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Per-account wording:** give X a shorter version or Instagram extra hashtags without writing separate posts.
 - **Calendar:** a month view per project, plus a "Coming up" list across every project on the home page.
 - **Edit and post again:** change a scheduled post right up until it goes out, or copy any earlier post (text, attachments and per-account wording) into the composer.
+- **Tailor with AI (optional):** with `ANTHROPIC_API_KEY` set, one click has Claude write a version of the post for each ticked account (shorter for X, "link in bio" and hashtags for Instagram, a title line for Reddit and YouTube) into the per-account boxes, for you to check before posting.
 - **Retry failed:** resend to just the accounts a post failed on; the ones that worked aren't posted to twice.
 - **Credentials** are encrypted with AES-256-GCM before they reach the database.
 

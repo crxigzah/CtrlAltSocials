@@ -11,6 +11,7 @@ import { getPlatform, postProblems, UPLOAD_TYPES, type MediaInfo } from "@/lib/p
 import { publishPost, retryPost } from "@/lib/publisher";
 import { createClient } from "@/lib/supabase/server";
 import type { Post } from "@/lib/types";
+import { tailorPost } from "@/lib/tailor";
 import { getWorkspace } from "@/lib/workspace";
 
 const back = (path: string, params: Record<string, string>) => redirect(`${path}?${new URLSearchParams(params)}`);
@@ -325,4 +326,16 @@ async function verifyMedia(
     out.push({ path, mime, size, alt });
   }
   return out;
+}
+
+/** "Tailor with AI": per-account versions of the main text, for the composer to drop into the wording boxes. */
+export async function tailorForAccounts(slug: string, body: string, accountIds: string[]) {
+  const ws = await getWorkspace(slug);
+  const supabase = await createClient();
+  const { data: accounts } = await supabase
+    .from("accounts")
+    .select("id, platform, label")
+    .eq("workspace_id", ws.id)
+    .in("id", accountIds.slice(0, 50));
+  return tailorPost(ws, String(body).slice(0, 5000), accounts ?? []);
 }

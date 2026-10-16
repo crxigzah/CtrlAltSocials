@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PlatformIcon } from "@/components/platform-icon";
 import { SubmitButton } from "@/components/submit-button";
 import { getPlatform, MAX_UPLOAD_BYTES, postLength, postProblems, UPLOAD_TYPES } from "@/lib/platforms/catalog";
 import { createClient } from "@/lib/supabase/client";
 import type { Account } from "@/lib/types";
-import { discardUpload } from "./actions";
+import { discardUpload, tailorForAccounts } from "./actions";
 
 /** A post to load into the composer: editing a scheduled one (postId set) or duplicating an old one. */
 export type Draft = {
@@ -25,6 +25,8 @@ type Props = {
   accounts: Pick<Account, "id" | "platform" | "label" | "status">[];
   action: (formData: FormData) => Promise<void>;
   draft?: Draft;
+  /** Whether the server has an Anthropic API key, so "Tailor with AI" can work. */
+  aiEnabled?: boolean;
 };
 
 type Attachment = {
@@ -51,7 +53,7 @@ function localInputValue(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function Composer({ slug, workspaceId, accounts, action, draft }: Props) {
+export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled }: Props) {
   const editing = Boolean(draft?.postId);
   const [body, setBody] = useState(draft?.body ?? "");
   // Everything's ticked to start with; accounts with a problem show a "check" badge instead of silently dropping out.
@@ -70,6 +72,24 @@ export function Composer({ slug, workspaceId, accounts, action, draft }: Props) 
   // Accounts given their own wording; everyone else gets the main text.
   const [overrides, setOverrides] = useState<Record<string, string>>(draft?.overrides ?? {});
   const fileInput = useRef<HTMLInputElement>(null);
+  const [tailoring, startTailor] = useTransition();
+  const [tailorMessage, setTailorMessage] = useState<{ kind: "error" | "warn"; text: string } | null>(null);
+  const [wordingOpen, setWordingOpen] = useState(Object.keys(draft?.overrides ?? {}).length > 0);
+
+  function tailor() {
+    setTailorMessage(null);
+    // Open the section so both the results and any error are visible.
+    setWordingOpen(true);
+    startTailor(async () => {
+      const result = await tailorForAccounts(slug, body, [...selected]);
+      if ("error" in result && result.error) return setTailorMessage({ kind: "error", text: result.error });
+      if ("overrides" in result && result.overrides) {
+        setOverrides((prev) => ({ ...prev, ...result.overrides }));
+        setWordingOpen(true);
+        if (result.warning) setTailorMessage({ kind: "warn", text: result.warning });
+      }
+    });
+  }
   // Created on first upload: the browser client only belongs in the browser.
   const supabaseRef = useRef<SupabaseClient | null>(null);
 
@@ -240,10 +260,33 @@ export function Composer({ slug, workspaceId, accounts, action, draft }: Props) 
       </div>
 
       {checks.length > 1 && (
-        <details className="group rounded-lg border border-line" open={Object.keys(overrides).length > 0}>
-          <summary className="cursor-pointer list-none px-3 py-2 text-sm text-muted hover:text-fg">
+        <details
+          className="group rounded-lg border border-line"
+          open={wordingOpen}
+          onToggle={(e) => setWordingOpen((e.target as HTMLDetailsElement).open)}
+        >
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm text-muted hover:text-fg">
             Customise the text per account <span className="text-subtle group-open:hidden">▸</span>
+            {aiEnabled && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  tailor();
+                }}
+                disabled={tailoring || !body.trim()}
+                title={body.trim() ? "Write a version for each ticked account" : "Write the main post first"}
+                className="btn-ghost ml-auto px-2.5 py-1 text-xs"
+              >
+                {tailoring ? "Tailoring…" : "✨ Tailor with AI"}
+              </button>
+            )}
           </summary>
+          {tailorMessage && (
+            <p className={`mx-3 mt-3 ${tailorMessage.kind === "error" ? "notice-error" : "rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn"}`}>
+              {tailorMessage.text}
+            </p>
+          )}
           <div className="space-y-3 border-t border-line p-3">
             {checks.map(({ account, platform, remaining }) => {
               const custom = account.id in overrides;
