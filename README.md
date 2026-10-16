@@ -33,6 +33,8 @@ Open **Status** (top right) once it's deployed. It checks every environment vari
 
 ## Local development
 
+`npm test` runs the unit tests (platform limits, threads, posting slots and repeats across clock changes, link tagging, link previews, Bluesky facets, encryption). CI runs lint, typecheck, tests and a build on every push to `main` and every pull request.
+
 With Docker running, `npx supabase start` brings up Postgres, Auth and Storage locally and applies every migration. Point `.env.local` at the URL and keys it prints, then `npm run dev`.
 
 ## Setup
