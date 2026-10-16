@@ -10,7 +10,12 @@ export type ConnectResult<C> = {
 };
 
 /** `credentials` comes back when the adapter refreshed a token during publishing and it must be saved. */
-export type PublishResult<C> = { url: string | null; credentials?: C };
+export type PublishResult<C> = {
+  url: string | null;
+  credentials?: C;
+  /** Something the user should know about a post that did go out (e.g. it was posted as private). */
+  note?: string;
+};
 
 /** An attachment as the publisher hands it to an adapter. */
 export type MediaFile = {

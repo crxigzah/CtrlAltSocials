@@ -149,7 +149,8 @@ function PostCard({ post, children }: { post: PostRow; children?: React.ReactNod
         </p>
       ))}
       {post.post_targets.filter((t) => t.error).map((t) => (
-        <p key={t.id} className="text-xs text-bad">{t.account?.label}: {t.error}</p>
+        // On a sent post the "error" is a note (e.g. posted as private), so it's a warning, not a failure.
+        <p key={t.id} className={`text-xs ${t.status === "sent" ? "text-warn" : "text-bad"}`}>{t.account?.label}: {t.error}</p>
       ))}
     </article>
   );

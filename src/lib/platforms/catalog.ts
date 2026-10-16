@@ -41,6 +41,8 @@ export type MediaRules = {
   mixed: boolean;
   /** Platforms like Instagram and TikTok can't post text on its own. */
   requiresMedia?: boolean;
+  /** YouTube needs text for the video title. */
+  requiresText?: boolean;
 };
 
 const MB = 1024 * 1024;
@@ -129,11 +131,11 @@ export const PLATFORMS: Platform[] = [
   {
     id: "tiktok",
     name: "TikTok",
-    status: "planned",
+    status: "live",
     connect: "oauth",
     maxLength: 2200,
     signupUrl: "https://www.tiktok.com/signup",
-    signupTip: "Video only. Posts made through the API stay private until TikTok approves the app in its audit.",
+    signupTip: "Video only. Until TikTok reviews your developer app, posts made through it can only be private, so CtrlAltSocials posts them as private and tells you.",
     handleMax: 24,
     bioMax: 80,
     media: { maxItems: 1, imageTypes: [], videoTypes: MP4, maxImageBytes: 0, maxVideoBytes: MAX_UPLOAD_BYTES, mixed: false, requiresMedia: true },
@@ -141,14 +143,14 @@ export const PLATFORMS: Platform[] = [
   {
     id: "youtube",
     name: "YouTube",
-    status: "planned",
+    status: "live",
     connect: "oauth",
     maxLength: 5000,
     signupUrl: "https://www.youtube.com/create_channel",
-    signupTip: "Create a Brand Account channel under the project's Google account so it can have its own name and managers.",
+    signupTip: "Create the channel under the project's own Google account. The first line of a post becomes the video title. Uploads stay private until Google audits your API project.",
     handleMax: 30,
     bioMax: 1000,
-    media: { maxItems: 1, imageTypes: [], videoTypes: MP4, maxImageBytes: 0, maxVideoBytes: MAX_UPLOAD_BYTES, mixed: false, requiresMedia: true },
+    media: { maxItems: 1, imageTypes: [], videoTypes: MP4, maxImageBytes: 0, maxVideoBytes: MAX_UPLOAD_BYTES, mixed: false, requiresMedia: true, requiresText: true },
   },
   {
     id: "reddit",
@@ -215,7 +217,8 @@ export function postProblems(platform: Platform, text: string, media: MediaInfo[
   const length = postLength(platform, text);
   if (length > platform.maxLength) problems.push(`${length - platform.maxLength} characters too long`);
   if (!text.trim() && media.length === 0) problems.push("nothing to post");
-  if (r.requiresMedia && media.length === 0) problems.push("needs an image or video");
+  if (r.requiresMedia && media.length === 0) problems.push(r.imageTypes.length ? "needs an image or video" : "needs a video");
+  if (r.requiresText && !text.trim()) problems.push("needs text (the first line becomes the title)");
   if (media.length === 0) return problems;
 
   if (r.maxItems === 0) return [...problems, "can't take attachments"];

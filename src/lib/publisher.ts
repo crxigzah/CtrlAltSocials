@@ -111,7 +111,8 @@ async function sendOne(target: TargetRow, body: string, media: MediaFile[]) {
     const result = await adapter.publish(decryptJson(account.credentials), body, media);
     return {
       status: "sent" as const,
-      error: null,
+      // A note on a sent post (e.g. "posted as private") rides in the error column; the UI shows it as a warning.
+      error: result.note ?? null,
       sent_at: new Date().toISOString(),
       remote_url: result.url,
       accountError: false,

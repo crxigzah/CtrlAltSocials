@@ -8,7 +8,7 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 
 - **Projects (workspaces):** each keeps its own accounts. A post can only target accounts in its own project; the database enforces this, not just the UI.
 - **Brand kit + setup checklist:** handle, bio, website and sign-up email per project, with a checklist of every platform's sign-up page, copy buttons, and warnings when the handle or bio is too long for a platform. You do the sign-ups yourself.
-- **Posting:** Bluesky (app password), Discord (channel webhook), and Threads, X, Instagram and Facebook Pages (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
+- **Posting:** Bluesky (app password), Discord (channel webhook), and Threads, X, Instagram, Facebook Pages, YouTube and TikTok (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
 - **Images and video:** attach up to 20 files with alt text and drag-free reordering. The composer checks each platform's rules (count, file type, size, mixing images and video) before you can post. Files upload straight to a private Supabase Storage bucket and platforms get short-lived signed links.
 - **Per-account wording:** give X a shorter version or Instagram extra hashtags without writing separate posts.
 - **Calendar:** a month view per project, plus a "Coming up" list across every project on the home page.
@@ -16,7 +16,7 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Retry failed:** resend to just the accounts a post failed on; the ones that worked aren't posted to twice.
 - **Credentials** are encrypted with AES-256-GCM before they reach the database.
 
-Planned next: Reddit, YouTube, TikTok. Each needs a developer app registered with the platform.
+Planned next: Reddit. Each needs a developer app registered with the platform.
 
 ## Local development
 
@@ -38,7 +38,7 @@ With Docker running, `npx supabase start` brings up Postgres, Auth and Storage l
    ```
 4. **Lock down sign-ups:** set `ALLOWED_EMAILS` to your own email so the app turns everyone else away, and turn off new sign-ups in Supabase → Authentication → Sign In / Providers once you've made your login.
 
-## Connecting Threads, X, Instagram and Facebook
+## Connecting the sign-in platforms
 
 Both sign in on the platform's own site, so each needs a developer app and `APP_URL` set to the app's public address. Connecting only works for the account you're signed into in that browser, so sign into the right project's account first (a separate browser profile per project makes this painless). Connecting the same account again refreshes it rather than adding a duplicate.
 
@@ -76,6 +76,21 @@ Instagram can't post text on its own, only JPEG images, and a single video goes 
 If your Facebook login manages several Pages, you'll be asked which one belongs to the project. Only that one is saved.
 
 One Meta app can carry Threads, Instagram and Facebook Login together, but each product has its own app ID and secret.
+
+**YouTube**
+1. [Google Cloud console](https://console.cloud.google.com/) → new project → enable **YouTube Data API v3**.
+2. OAuth consent screen: External, add scopes `youtube.upload` and `youtube.readonly`, and add the project's Google account as a test user.
+3. Credentials → OAuth client ID → Web application, redirect URI `<APP_URL>/api/oauth/youtube/callback`.
+4. Copy the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
+The first line of the post becomes the video title and the whole text the description. Google keeps uploads from unaudited API projects private; the post history says so when that happens. Request the audit from the YouTube API Services form once you're happy with it. Uploads also use a chunk of the daily API quota, so expect a handful of videos a day on the default quota.
+
+**TikTok**
+1. [developers.tiktok.com](https://developers.tiktok.com/) → create an app with **Login Kit** and **Content Posting API** (enable Direct Post).
+2. Scopes `user.info.basic` and `video.publish`; redirect URI `<APP_URL>/api/oauth/tiktok/callback`.
+3. Copy the client key and secret into `TIKTOK_CLIENT_KEY` and `TIKTOK_CLIENT_SECRET`.
+
+Until TikTok reviews the app, it only accepts private posts. CtrlAltSocials posts them as private and flags it in the history; submit the app for review to post publicly.
 
 ## Scheduled posts
 

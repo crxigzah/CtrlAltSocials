@@ -6,7 +6,9 @@ import { facebook } from "./facebook";
 import { instagram } from "./instagram";
 import { PlatformError, type Adapter, type OAuthAdapter } from "./shared";
 import { threads } from "./threads";
+import { tiktok } from "./tiktok";
 import { x } from "./x";
+import { youtube } from "./youtube";
 
 export { PlatformError } from "./shared";
 
@@ -16,6 +18,8 @@ const ADAPTERS: Partial<Record<PlatformId, Adapter<never>>> = {
   threads: threads as Adapter<never>,
   instagram: instagram as Adapter<never>,
   facebook: facebook as Adapter<never>,
+  youtube: youtube as Adapter<never>,
+  tiktok: tiktok as Adapter<never>,
   x: x as Adapter<never>,
 };
 
