@@ -27,7 +27,31 @@ export type Platform = {
   /** Rough handle limit, so the checklist can warn when the brand handle won't fit. */
   handleMax: number;
   bioMax: number;
+  media: MediaRules;
 };
+
+export type MediaRules = {
+  /** Most attachments in one post; 0 means text only. */
+  maxItems: number;
+  imageTypes: string[];
+  videoTypes: string[];
+  maxImageBytes: number;
+  maxVideoBytes: number;
+  /** Whether images and videos can go in the same post. */
+  mixed: boolean;
+  /** Platforms like Instagram and TikTok can't post text on its own. */
+  requiresMedia?: boolean;
+};
+
+const MB = 1024 * 1024;
+const JPEG_PNG = ["image/jpeg", "image/png"];
+const COMMON_IMAGES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MP4 = ["video/mp4", "video/quicktime"];
+const TEXT_ONLY: MediaRules = { maxItems: 0, imageTypes: [], videoTypes: [], maxImageBytes: 0, maxVideoBytes: 0, mixed: false };
+
+/** Bucket limit: nothing bigger than this can be uploaded at all. */
+export const MAX_UPLOAD_BYTES = 50 * MB;
+export const UPLOAD_TYPES = [...COMMON_IMAGES, ...MP4];
 
 export const PLATFORMS: Platform[] = [
   {
@@ -40,6 +64,7 @@ export const PLATFORMS: Platform[] = [
     signupTip: "Free to post. After signing up, create an app password in Settings → Privacy and security → App passwords and use that to connect here, never your main password.",
     handleMax: 18,
     bioMax: 256,
+    media: { maxItems: 4, imageTypes: COMMON_IMAGES, videoTypes: [], maxImageBytes: 976 * 1024, maxVideoBytes: 0, mixed: false },
   },
   {
     id: "discord",
@@ -51,6 +76,7 @@ export const PLATFORMS: Platform[] = [
     signupTip: "Posts go to a channel through a webhook: Server Settings → Integrations → Webhooks → New Webhook, then copy its URL.",
     handleMax: 32,
     bioMax: 190,
+    media: { maxItems: 10, imageTypes: COMMON_IMAGES, videoTypes: MP4, maxImageBytes: 10 * MB, maxVideoBytes: 10 * MB, mixed: true },
   },
   {
     id: "x",
@@ -62,6 +88,7 @@ export const PLATFORMS: Platform[] = [
     signupTip: "Sign up in a private window with \"Continue with Google\" using the project's own Gmail. Posting through the API is paid per use.",
     handleMax: 15,
     bioMax: 160,
+    media: { maxItems: 4, imageTypes: COMMON_IMAGES, videoTypes: [], maxImageBytes: 5 * MB, maxVideoBytes: 0, mixed: false },
   },
   {
     id: "instagram",
@@ -73,6 +100,7 @@ export const PLATFORMS: Platform[] = [
     signupTip: "Switch it to a Professional (Business or Creator) account and link it to the project's Facebook Page, or the API can't post to it.",
     handleMax: 30,
     bioMax: 150,
+    media: { maxItems: 10, imageTypes: ["image/jpeg"], videoTypes: MP4, maxImageBytes: 8 * MB, maxVideoBytes: MAX_UPLOAD_BYTES, mixed: true, requiresMedia: true },
   },
   {
     id: "facebook",
@@ -84,6 +112,7 @@ export const PLATFORMS: Platform[] = [
     signupTip: "Create a Page from your personal Facebook account rather than a separate profile; Pages are what the API posts to.",
     handleMax: 50,
     bioMax: 255,
+    media: { maxItems: 10, imageTypes: COMMON_IMAGES, videoTypes: MP4, maxImageBytes: 10 * MB, maxVideoBytes: MAX_UPLOAD_BYTES, mixed: false },
   },
   {
     id: "threads",
@@ -95,6 +124,7 @@ export const PLATFORMS: Platform[] = [
     signupTip: "Threads signs in with the project's Instagram account, so set that up first.",
     handleMax: 30,
     bioMax: 150,
+    media: { maxItems: 20, imageTypes: JPEG_PNG, videoTypes: MP4, maxImageBytes: 8 * MB, maxVideoBytes: MAX_UPLOAD_BYTES, mixed: true },
   },
   {
     id: "tiktok",
@@ -106,6 +136,7 @@ export const PLATFORMS: Platform[] = [
     signupTip: "Video only. Posts made through the API stay private until TikTok approves the app in its audit.",
     handleMax: 24,
     bioMax: 80,
+    media: { maxItems: 1, imageTypes: [], videoTypes: MP4, maxImageBytes: 0, maxVideoBytes: MAX_UPLOAD_BYTES, mixed: false, requiresMedia: true },
   },
   {
     id: "youtube",
@@ -117,6 +148,7 @@ export const PLATFORMS: Platform[] = [
     signupTip: "Create a Brand Account channel under the project's Google account so it can have its own name and managers.",
     handleMax: 30,
     bioMax: 1000,
+    media: { maxItems: 1, imageTypes: [], videoTypes: MP4, maxImageBytes: 0, maxVideoBytes: MAX_UPLOAD_BYTES, mixed: false, requiresMedia: true },
   },
   {
     id: "reddit",
@@ -128,6 +160,7 @@ export const PLATFORMS: Platform[] = [
     signupTip: "Each subreddit has its own self-promotion rules; read them before posting project links.",
     handleMax: 20,
     bioMax: 200,
+    media: TEXT_ONLY,
   },
 ];
 
@@ -166,4 +199,39 @@ export function postLength(platform: Platform, text: string): number {
     default:
       return [...text].length;
   }
+}
+
+export type MediaInfo = { mime: string; size: number };
+
+const fmtMB = (bytes: number) => `${Math.round((bytes / MB) * 10) / 10} MB`;
+
+/**
+ * Everything wrong with sending this text and media to this platform, in plain English.
+ * Shared by the composer, the server action and the publisher so they always agree.
+ */
+export function postProblems(platform: Platform, text: string, media: MediaInfo[]): string[] {
+  const problems: string[] = [];
+  const r = platform.media;
+  const length = postLength(platform, text);
+  if (length > platform.maxLength) problems.push(`${length - platform.maxLength} characters too long`);
+  if (!text.trim() && media.length === 0) problems.push("nothing to post");
+  if (r.requiresMedia && media.length === 0) problems.push("needs an image or video");
+  if (media.length === 0) return problems;
+
+  if (r.maxItems === 0) return [...problems, "can't take attachments"];
+  if (media.length > r.maxItems) problems.push(`max ${r.maxItems} attachment${r.maxItems === 1 ? "" : "s"}`);
+  const images = media.filter((m) => m.mime.startsWith("image/"));
+  const videos = media.filter((m) => m.mime.startsWith("video/"));
+  if (videos.length && !r.videoTypes.length) problems.push("no video support yet");
+  if (images.length && !r.imageTypes.length) problems.push("video only");
+  if (!r.mixed && images.length && videos.length) problems.push("can't mix images and video");
+  if (!r.mixed && videos.length > 1) problems.push("one video per post");
+  const badType = media.find((m) => r.imageTypes.length + r.videoTypes.length > 0
+    && (m.mime.startsWith("image/") ? r.imageTypes.length && !r.imageTypes.includes(m.mime) : r.videoTypes.length && !r.videoTypes.includes(m.mime)));
+  if (badType) problems.push(`doesn't accept ${badType.mime.split("/")[1].toUpperCase()}`);
+  const bigImage = images.find((m) => r.maxImageBytes && m.size > r.maxImageBytes);
+  if (bigImage) problems.push(`images must be under ${fmtMB(r.maxImageBytes)}`);
+  const bigVideo = videos.find((m) => r.maxVideoBytes && m.size > r.maxVideoBytes);
+  if (bigVideo) problems.push(`videos must be under ${fmtMB(r.maxVideoBytes)}`);
+  return problems;
 }

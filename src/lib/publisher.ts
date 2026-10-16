@@ -2,7 +2,8 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptJson, encryptJson } from "@/lib/crypto";
 import { describeError, getAdapter } from "@/lib/platforms/adapters";
-import { getPlatform, postLength } from "@/lib/platforms/catalog";
+import type { MediaFile } from "@/lib/platforms/adapters/shared";
+import { getPlatform, postProblems } from "@/lib/platforms/catalog";
 import type { Post, PostStatus } from "@/lib/types";
 
 type TargetRow = {
@@ -24,8 +25,9 @@ export async function publishPost(supabase: SupabaseClient, post: Post): Promise
   if (error) throw error;
 
   const targets = data ?? [];
+  const media = await loadMedia(supabase, post.id);
   for (const target of targets.filter((t) => t.status === "pending")) {
-    const { accountError, newCredentials, ...update } = await sendOne(target, post.body);
+    const { accountError, newCredentials, ...update } = await sendOne(target, post.body, media);
     await supabase.from("post_targets").update(update).eq("id", target.id);
     if (newCredentials !== undefined && target.account) {
       // A token was refreshed on the way; losing it would lock the account out.
@@ -45,7 +47,37 @@ export async function publishPost(supabase: SupabaseClient, post: Post): Promise
   return status;
 }
 
-async function sendOne(target: TargetRow, body: string) {
+/** The post's attachments, each with a signed URL good for an hour and lazily fetched bytes. */
+async function loadMedia(supabase: SupabaseClient, postId: string): Promise<MediaFile[]> {
+  const { data, error } = await supabase
+    .from("post_media")
+    .select("path, mime, size, alt")
+    .eq("post_id", postId)
+    .order("position");
+  if (error) throw error;
+
+  const files: MediaFile[] = [];
+  for (const row of data ?? []) {
+    const { data: signed, error: signError } = await supabase.storage.from("media").createSignedUrl(row.path, 60 * 60);
+    if (signError || !signed) throw new Error(`Couldn't read attachment ${row.path}: ${signError?.message}`);
+    let cached: Promise<Buffer> | null = null;
+    files.push({
+      mime: row.mime,
+      size: row.size,
+      alt: row.alt,
+      url: signed.signedUrl,
+      filename: row.path.split("/").pop() ?? "file",
+      bytes: () =>
+        (cached ??= fetch(signed.signedUrl, { cache: "no-store" }).then(async (res) => {
+          if (!res.ok) throw new Error(`Couldn't download attachment (${res.status}).`);
+          return Buffer.from(await res.arrayBuffer());
+        })),
+    });
+  }
+  return files;
+}
+
+async function sendOne(target: TargetRow, body: string, media: MediaFile[]) {
   const fail = (error: string, accountError = false, newCredentials?: unknown) =>
     ({ status: "failed" as const, error, sent_at: null, remote_url: null, accountError, newCredentials });
 
@@ -54,12 +86,11 @@ async function sendOne(target: TargetRow, body: string) {
   const platform = getPlatform(account.platform);
   const adapter = getAdapter(account.platform);
   if (!platform || !adapter) return fail(`Posting to ${platform?.name ?? account.platform} isn't supported yet.`);
-  if (postLength(platform, body) > platform.maxLength) {
-    return fail(`Too long for ${platform.name} (max ${platform.maxLength} characters).`);
-  }
+  const problems = postProblems(platform, body, media);
+  if (problems.length) return fail(`Can't post this to ${platform.name}: ${problems.join(", ")}.`);
 
   try {
-    const result = await adapter.publish(decryptJson(account.credentials), body);
+    const result = await adapter.publish(decryptJson(account.credentials), body, media);
     return {
       status: "sent" as const,
       error: null,

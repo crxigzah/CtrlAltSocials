@@ -1,5 +1,5 @@
 import "server-only";
-import { PlatformError, readError, type FormAdapter } from "./shared";
+import { PlatformError, readError, type FormAdapter, type MediaFile } from "./shared";
 
 type BlueskyCredentials = { identifier: string; appPassword: string; service: string };
 
@@ -39,6 +39,23 @@ export function blueskyFacets(text: string) {
   return facets;
 }
 
+/** Uploads each image as a blob and returns the embed that attaches them to the post. */
+async function blueskyImages(service: string, accessJwt: string, media: MediaFile[]) {
+  const images = [];
+  for (const file of media) {
+    const res = await fetch(`${service}/xrpc/com.atproto.repo.uploadBlob`, {
+      method: "POST",
+      headers: { "Content-Type": file.mime, Authorization: `Bearer ${accessJwt}` },
+      body: new Uint8Array(await file.bytes()),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new PlatformError(`Bluesky rejected an image: ${await readError(res)}`);
+    const { blob } = (await res.json()) as { blob: unknown };
+    images.push({ image: blob, alt: file.alt ?? "" });
+  }
+  return { $type: "app.bsky.embed.images", images };
+}
+
 export const bluesky: FormAdapter<BlueskyCredentials> = {
   kind: "form",
   async connect(input) {
@@ -52,9 +69,10 @@ export const bluesky: FormAdapter<BlueskyCredentials> = {
     const session = await blueskySession(credentials);
     return { credentials, label: `@${session.handle}`, remoteId: session.did };
   },
-  async publish(c, text) {
+  async publish(c, text, media) {
     const session = await blueskySession(c);
     const facets = blueskyFacets(text);
+    const embed = media.length ? await blueskyImages(c.service, session.accessJwt, media) : undefined;
     const res = await fetch(`${c.service}/xrpc/com.atproto.repo.createRecord`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.accessJwt}` },
@@ -66,6 +84,7 @@ export const bluesky: FormAdapter<BlueskyCredentials> = {
           text,
           createdAt: new Date().toISOString(),
           ...(facets.length ? { facets } : {}),
+          ...(embed ? { embed } : {}),
         },
       }),
       cache: "no-store",

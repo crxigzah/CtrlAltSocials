@@ -9,6 +9,7 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Projects (workspaces):** each keeps its own accounts. A post can only target accounts in its own project; the database enforces this, not just the UI.
 - **Brand kit + setup checklist:** handle, bio, website and sign-up email per project, with a checklist of every platform's sign-up page, copy buttons, and warnings when the handle or bio is too long for a platform. You do the sign-ups yourself.
 - **Posting:** Bluesky (app password), Discord (channel webhook), Threads and X (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
+- **Images and video:** attach up to 20 files with alt text and drag-free reordering. The composer checks each platform's rules (count, file type, size, mixing images and video) before you can post. Files upload straight to a private Supabase Storage bucket and platforms get short-lived signed links.
 - **Credentials** are encrypted with AES-256-GCM before they reach the database.
 
 Planned next: Instagram, Facebook Pages, Reddit, YouTube, TikTok. Each needs a developer app registered with the platform.
@@ -47,6 +48,8 @@ Tokens last 60 days and refresh themselves whenever a post goes out in the last 
 2. User authentication settings → OAuth 2.0, type "Web App", permissions "Read and write".
 3. Callback URI: `<APP_URL>/api/oauth/x/callback`.
 4. Copy the OAuth 2.0 client ID and secret into `X_CLIENT_ID` and `X_CLIENT_SECRET`.
+
+Image uploads need the `media.write` scope, which the app asks for when connecting. X video isn't supported yet.
 
 ## Scheduled posts
 

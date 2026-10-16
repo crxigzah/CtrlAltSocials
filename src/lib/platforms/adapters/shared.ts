@@ -12,8 +12,20 @@ export type ConnectResult<C> = {
 /** `credentials` comes back when the adapter refreshed a token during publishing and it must be saved. */
 export type PublishResult<C> = { url: string | null; credentials?: C };
 
+/** An attachment as the publisher hands it to an adapter. */
+export type MediaFile = {
+  mime: string;
+  size: number;
+  alt: string | null;
+  /** Short-lived signed URL, for platforms that fetch the file themselves (Threads, Instagram). */
+  url: string;
+  /** The file's bytes, for platforms the file is uploaded to directly. */
+  bytes(): Promise<Buffer>;
+  filename: string;
+};
+
 type Base<C> = {
-  publish(credentials: C, text: string): Promise<PublishResult<C>>;
+  publish(credentials: C, text: string, media: MediaFile[]): Promise<PublishResult<C>>;
 };
 
 /** Platforms connected by typing something into a form (an app password, a webhook URL). */

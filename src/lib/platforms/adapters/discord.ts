@@ -30,14 +30,26 @@ export const discord: FormAdapter<DiscordCredentials> = {
       remoteId: hook.id,
     };
   },
-  async publish(c, text) {
-    const res = await fetch(`${c.webhookUrl}?wait=true`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // Never let a post ping @everyone or roles by accident.
-      body: JSON.stringify({ content: text, allowed_mentions: { parse: [] } }),
-      cache: "no-store",
-    });
+  async publish(c, text, media) {
+    // Never let a post ping @everyone or roles by accident.
+    const payload = {
+      content: text,
+      allowed_mentions: { parse: [] },
+      attachments: media.map((m, i) => ({ id: i, filename: m.filename, ...(m.alt ? { description: m.alt.slice(0, 1024) } : {}) })),
+    };
+    let body: BodyInit = JSON.stringify(payload);
+    const headers: HeadersInit = {};
+    if (media.length) {
+      const form = new FormData();
+      form.set("payload_json", JSON.stringify(payload));
+      for (const [i, m] of media.entries()) {
+        form.set(`files[${i}]`, new Blob([new Uint8Array(await m.bytes())], { type: m.mime }), m.filename);
+      }
+      body = form;
+    } else {
+      headers["Content-Type"] = "application/json";
+    }
+    const res = await fetch(`${c.webhookUrl}?wait=true`, { method: "POST", headers, body, cache: "no-store" });
     if (!res.ok) throw new PlatformError(`Discord rejected the post: ${await readError(res)}`);
     const msg = (await res.json()) as { id: string; channel_id: string };
     return { url: c.guildId ? `https://discord.com/channels/${c.guildId}/${msg.channel_id}/${msg.id}` : null };

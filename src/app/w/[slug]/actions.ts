@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { saveAccount } from "@/lib/accounts";
 import { describeError, getAdapter } from "@/lib/platforms/adapters";
 import type { FormAdapter } from "@/lib/platforms/adapters/shared";
-import { getPlatform, postLength } from "@/lib/platforms/catalog";
+import { getPlatform, postProblems, UPLOAD_TYPES, type MediaInfo } from "@/lib/platforms/catalog";
 import { publishPost } from "@/lib/publisher";
 import { createClient } from "@/lib/supabase/server";
 import type { Post } from "@/lib/types";
@@ -44,6 +44,12 @@ export async function deleteWorkspace(slug: string, formData: FormData) {
     back(`/w/${slug}/settings`, { error: `Type "${ws.name}" to confirm deleting the project.` });
   }
   const supabase = await createClient();
+  // Uploaded files aren't covered by the cascade; clear the project's folder first.
+  for (let round = 0; round < 20; round++) {
+    const { data: files } = await supabase.storage.from("media").list(ws.id, { limit: 1000 });
+    if (!files?.length) break;
+    await supabase.storage.from("media").remove(files.map((f) => `${ws.id}/${f.name}`));
+  }
   await supabase.from("workspaces").delete().eq("id", ws.id);
   redirect("/");
 }
@@ -98,7 +104,6 @@ export async function createPost(slug: string, formData: FormData) {
   const when = String(formData.get("when") ?? "now");
   const scheduledRaw = String(formData.get("scheduled_at") ?? "");
 
-  if (!body) back(path, { error: "Write something first." });
   if (accountIds.length === 0) back(path, { error: "Pick at least one account to post to." });
 
   let scheduledAt = new Date();
@@ -109,6 +114,10 @@ export async function createPost(slug: string, formData: FormData) {
   }
 
   const supabase = await createClient();
+  const media = await verifyMedia(supabase, ws.id, String(formData.get("media") ?? "[]"));
+  if (typeof media === "string") return back(path, { error: media });
+  if (!body && media.length === 0) back(path, { error: "Write something or attach a file first." });
+
   // Only this workspace's accounts can be targeted, whatever the form sent.
   const { data: accounts } = await supabase
     .from("accounts")
@@ -119,9 +128,8 @@ export async function createPost(slug: string, formData: FormData) {
 
   for (const a of accounts!) {
     const platform = getPlatform(a.platform)!;
-    if (postLength(platform, body) > platform.maxLength) {
-      back(path, { error: `Too long for ${a.label} on ${platform.name} (max ${platform.maxLength}).` });
-    }
+    const problems = postProblems(platform, body, media);
+    if (problems.length) back(path, { error: `${a.label} (${platform.name}): ${problems.join(", ")}.` });
   }
 
   const { data: post, error } = await supabase
@@ -134,9 +142,12 @@ export async function createPost(slug: string, formData: FormData) {
   const { error: targetError } = await supabase
     .from("post_targets")
     .insert(accounts!.map((a) => ({ post_id: post.id, account_id: a.id })));
-  if (targetError) {
+  const { error: mediaError } = media.length
+    ? await supabase.from("post_media").insert(media.map((m, position) => ({ post_id: post.id, position, path: m.path, mime: m.mime, size: m.size, alt: m.alt })))
+    : { error: null };
+  if (targetError || mediaError) {
     await supabase.from("posts").delete().eq("id", post.id);
-    back(path, { error: targetError.message });
+    back(path, { error: (targetError ?? mediaError)!.message });
   }
 
   if (when === "now") {
@@ -152,6 +163,63 @@ export async function cancelPost(slug: string, postId: string) {
   const ws = await getWorkspace(slug);
   const supabase = await createClient();
   // Only posts that haven't started sending can be cancelled.
-  await supabase.from("posts").delete().eq("id", postId).eq("workspace_id", ws.id).eq("status", "scheduled");
+  const { data: deleted } = await supabase
+    .from("posts")
+    .delete()
+    .eq("id", postId)
+    .eq("workspace_id", ws.id)
+    .eq("status", "scheduled")
+    .select("post_media(path)");
+  const paths = (deleted ?? []).flatMap((p) => (p.post_media as { path: string }[]).map((m) => m.path));
+  if (paths.length) await supabase.storage.from("media").remove(paths);
   revalidatePath(`/w/${slug}`);
+}
+
+/** Removes a file uploaded in the composer but taken off the post before it was sent. */
+export async function discardUpload(slug: string, path: string) {
+  const ws = await getWorkspace(slug);
+  if (!MEDIA_PATH.test(path) || !path.startsWith(`${ws.id}/`)) return;
+  const supabase = await createClient();
+  const { count } = await supabase.from("post_media").select("id", { count: "exact", head: true }).eq("path", path);
+  if (!count) await supabase.storage.from("media").remove([path]);
+}
+
+const MEDIA_PATH = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|jpeg|png|webp|gif|mp4|mov)$/;
+
+type VerifiedMedia = MediaInfo & { path: string; alt: string | null };
+
+/**
+ * The composer uploads straight to Storage and sends back paths. Trust nothing about
+ * them: each must be in this workspace's folder and exist, and its real size and type
+ * come from Storage, not the browser.
+ */
+async function verifyMedia(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workspaceId: string,
+  raw: string,
+): Promise<VerifiedMedia[] | string> {
+  let items: { path?: unknown; alt?: unknown }[];
+  try {
+    items = JSON.parse(raw);
+    if (!Array.isArray(items)) throw new Error();
+  } catch {
+    return "The attachments didn't come through. Try attaching them again.";
+  }
+  if (items.length > 20) return "That's more attachments than any platform allows.";
+
+  const out: VerifiedMedia[] = [];
+  for (const item of items) {
+    const path = String(item.path ?? "");
+    if (!MEDIA_PATH.test(path) || !path.startsWith(`${workspaceId}/`)) return "One of the attachments isn't from this project.";
+    const { data, error } = await supabase.storage.from("media").info(path);
+    if (error || !data) return "One of the attachments is missing. Remove it and attach it again.";
+    // Depending on the Storage version, type and size come top-level or inside metadata.
+    const meta = (data.metadata ?? {}) as { mimetype?: string; size?: number; contentLength?: number };
+    const mime = data.contentType ?? meta.mimetype ?? "";
+    const size = data.size ?? meta.size ?? meta.contentLength ?? 0;
+    if (!UPLOAD_TYPES.includes(mime) || !size) return `Unsupported file type: ${mime || "unknown"}.`;
+    const alt = String(item.alt ?? "").trim().slice(0, 1000) || null;
+    out.push({ path, mime, size, alt });
+  }
+  return out;
 }

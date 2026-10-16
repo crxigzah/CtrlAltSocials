@@ -8,7 +8,8 @@ import { PlatformError, readError, requireEnv, type OAuthAdapter } from "./share
 type XCredentials = { accessToken: string; refreshToken: string; expiresAt: number; userId: string; username: string };
 
 const API = "https://api.x.com/2";
-const SCOPES = "tweet.read tweet.write users.read offline.access";
+// media.write is needed for image uploads; accounts connected before it was added must reconnect.
+const SCOPES = "tweet.read tweet.write users.read media.write offline.access";
 
 function basicAuth() {
   return "Basic " + Buffer.from(`${requireEnv("X_CLIENT_ID")}:${requireEnv("X_CLIENT_SECRET")}`).toString("base64");
@@ -62,24 +63,41 @@ export const x: OAuthAdapter<XCredentials> = {
     };
   },
 
-  async publish(c, text) {
+  async publish(c, text, media) {
     const refreshed =
       c.expiresAt - Date.now() < 5 * 60 * 1000
         ? { ...c, ...(await token({ grant_type: "refresh_token", refresh_token: c.refreshToken })) }
         : null;
     const creds = refreshed ?? c;
 
+    // Even when the post fails, a rotated refresh token has to be kept or the account is locked out.
+    const keepToken = (err: PlatformError) => Object.assign(err, { credentials: refreshed ?? undefined });
+
+    const mediaIds: string[] = [];
+    for (const file of media) {
+      const up = await fetch(`${API}/media/upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${creds.accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ media: (await file.bytes()).toString("base64"), media_category: "tweet_image", media_type: file.mime }),
+        cache: "no-store",
+      });
+      if (!up.ok) {
+        const reason = await readError(up);
+        throw keepToken(new PlatformError(
+          up.status === 403 ? `X refused the image upload (${reason}). Reconnect the account so it can upload media.` : `X rejected an image: ${reason}`,
+        ));
+      }
+      const { data } = (await up.json()) as { data: { id: string } };
+      mediaIds.push(data.id);
+    }
+
     const res = await fetch(`${API}/tweets`, {
       method: "POST",
       headers: { Authorization: `Bearer ${creds.accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ ...(text ? { text } : {}), ...(mediaIds.length ? { media: { media_ids: mediaIds } } : {}) }),
       cache: "no-store",
     });
-    if (!res.ok) {
-      const reason = await readError(res);
-      // Even when the post fails, a rotated refresh token has to be kept or the account is locked out.
-      throw Object.assign(new PlatformError(`X rejected the post: ${reason}`), { credentials: refreshed ?? undefined });
-    }
+    if (!res.ok) throw keepToken(new PlatformError(`X rejected the post: ${await readError(res)}`));
     const { data } = (await res.json()) as { data: { id: string } };
     return { url: `https://x.com/${creds.username}/status/${data.id}`, credentials: refreshed ?? undefined };
   },

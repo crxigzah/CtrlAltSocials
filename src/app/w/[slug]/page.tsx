@@ -10,7 +10,7 @@ import { LocalTime } from "./local-time";
 
 export const metadata = { title: "Compose" };
 
-type PostRow = Post & { post_targets: (PostTarget & { account: Pick<Account, "label" | "platform"> | null })[] };
+type PostRow = Post & { post_media: { id: string; mime: string; alt: string | null; position: number }[]; post_targets: (PostTarget & { account: Pick<Account, "label" | "platform"> | null })[] };
 
 const POST_STATUS: Record<Post["status"], { label: string; cls: string }> = {
   scheduled: { label: "Scheduled", cls: "bg-accent/15 text-accent" },
@@ -37,7 +37,7 @@ export default async function ComposePage({
     supabase.from("accounts").select("id, platform, label, status").eq("workspace_id", ws.id).in("platform", live).order("created_at"),
     supabase
       .from("posts")
-      .select("*, post_targets(*, account:accounts(label, platform))")
+      .select("*, post_media(id, mime, alt, position), post_targets(*, account:accounts(label, platform))")
       .eq("workspace_id", ws.id)
       .order("scheduled_at", { ascending: false })
       .limit(50)
@@ -62,7 +62,12 @@ export default async function ComposePage({
           <Link href={`/w/${slug}/accounts`} className="btn-primary mt-4">Connect an account</Link>
         </div>
       ) : (
-        <Composer accounts={accounts as Pick<Account, "id" | "platform" | "label" | "status">[]} action={createPost.bind(null, slug)} />
+        <Composer
+          slug={slug}
+          workspaceId={ws.id}
+          accounts={accounts as Pick<Account, "id" | "platform" | "label" | "status">[]}
+          action={createPost.bind(null, slug)}
+        />
       )}
 
       {upcoming.length > 0 && (
@@ -96,7 +101,13 @@ function PostCard({ post, children }: { post: PostRow; children?: React.ReactNod
         <LocalTime iso={post.scheduled_at} />
         <span className="ml-auto">{children}</span>
       </div>
-      <p className="whitespace-pre-wrap text-sm">{post.body}</p>
+      {post.body && <p className="whitespace-pre-wrap text-sm">{post.body}</p>}
+      {post.post_media.length > 0 && (
+        <p className="text-xs text-muted">
+          📎 {post.post_media.length} attachment{post.post_media.length === 1 ? "" : "s"}
+          {" "}({[...new Set(post.post_media.map((m) => (m.mime.startsWith("video/") ? "video" : "image")))].join(" + ")})
+        </p>
+      )}
       <ul className="flex flex-wrap gap-2">
         {post.post_targets.map((t) => (
           <li key={t.id} className="flex items-center gap-1.5 rounded-md border border-line px-2 py-1 text-xs" title={t.error ?? undefined}>
