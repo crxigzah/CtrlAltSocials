@@ -9,6 +9,7 @@ import { REPEAT_LABEL, type Repeat } from "@/lib/slots";
 import { createClient } from "@/lib/supabase/client";
 import type { Account } from "@/lib/types";
 import { discardUpload, listLibrary, tailorForAccounts, type LibraryItem } from "./actions";
+import { PostPreview, type PreviewBrand } from "./post-preview";
 
 /** A post to load into the composer: editing a scheduled one (postId set) or duplicating an old one. */
 export type Draft = {
@@ -35,6 +36,7 @@ type Props = {
   snippets?: { id: string; name: string; body: string }[];
   /** Preview of the project's next free posting slot, or null when it has none. */
   nextSlot?: string | null;
+  brand?: PreviewBrand;
 };
 
 type When = "now" | "later" | "queue" | "draft";
@@ -64,7 +66,7 @@ function localInputValue(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled, snippets = [], nextSlot = null }: Props) {
+export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled, snippets = [], nextSlot = null, brand }: Props) {
   const editing = Boolean(draft?.postId);
   const [body, setBody] = useState(draft?.body ?? "");
   // Further thread parts after the main text.
@@ -100,6 +102,7 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
   const fileInput = useRef<HTMLInputElement>(null);
   const [tailoring, startTailor] = useTransition();
   const [library, setLibrary] = useState<LibraryItem[] | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [loadingLibrary, startLibrary] = useTransition();
 
@@ -448,6 +451,43 @@ export function Composer({ slug, workspaceId, accounts, action, draft, aiEnabled
                 </div>
               );
             })}
+          </div>
+        </details>
+      )}
+
+      {brand && checks.length > 0 && (
+        <details className="group rounded-lg border border-line">
+          <summary className="cursor-pointer list-none px-3 py-2 text-sm text-muted hover:text-fg">
+            Preview <span className="text-subtle group-open:hidden">▸</span>
+          </summary>
+          <div className="space-y-3 border-t border-line p-3">
+            <div className="flex flex-wrap gap-1">
+              {checks.map(({ account }) => {
+                const active = (previewId ?? checks[0].account.id) === account.id;
+                return (
+                  <button
+                    key={account.id}
+                    type="button"
+                    onClick={() => setPreviewId(account.id)}
+                    className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${active ? "border-accent bg-accent/10" : "border-line text-muted"}`}
+                  >
+                    <PlatformIcon platform={account.platform} size={14} /> {account.label}
+                  </button>
+                );
+              })}
+            </div>
+            {(() => {
+              const shown = checks.find((c) => c.account.id === previewId) ?? checks[0];
+              return (
+                <PostPreview
+                  platform={shown.account.platform}
+                  text={overrides[shown.account.id] ?? body}
+                  parts={parts}
+                  media={ready.map((a) => ({ url: a.preview, mime: a.mime }))}
+                  brand={brand}
+                />
+              );
+            })()}
           </div>
         </details>
       )}

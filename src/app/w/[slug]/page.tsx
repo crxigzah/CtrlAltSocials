@@ -104,6 +104,7 @@ export default async function ComposePage({
           draft={draft ?? undefined}
           aiEnabled={aiEnabled()}
           snippets={snippets ?? []}
+          brand={{ name: ws.name, handle: ws.handle, color: ws.color }}
           nextSlot={next ? fmt(next) : null}
           slug={slug}
           workspaceId={ws.id}
