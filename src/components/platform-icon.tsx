@@ -11,6 +11,8 @@ const STYLE: Record<PlatformId, { bg: string; text: string }> = {
   tiktok: { bg: "#111111", text: "TT" },
   youtube: { bg: "#ff0000", text: "YT" },
   reddit: { bg: "#ff4500", text: "R" },
+  mastodon: { bg: "#6364ff", text: "M" },
+  linkedin: { bg: "#0a66c2", text: "in" },
 };
 
 export function PlatformIcon({ platform, size = 28 }: { platform: PlatformId; size?: number }) {

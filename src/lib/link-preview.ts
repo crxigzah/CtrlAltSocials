@@ -11,7 +11,7 @@ const MAX_HTML_BYTES = 512 * 1024;
 const TIMEOUT_MS = 5000;
 
 /** Refuses obviously internal targets; the post text is the owner's, but the server shouldn't be pointed inward. */
-function isPublicHttpUrl(raw: string): URL | null {
+export function isPublicHttpUrl(raw: string): URL | null {
   try {
     const url = new URL(raw);
     if (url.protocol !== "https:" && url.protocol !== "http:") return null;
@@ -70,7 +70,7 @@ function isPrivateAddress(ip: string): boolean {
 }
 
 /** Resolves the host and refuses it if any address it points at is internal. */
-async function resolvesPublicly(url: URL): Promise<boolean> {
+export async function resolvesPublicly(url: URL): Promise<boolean> {
   try {
     const addresses = await lookup(url.hostname, { all: true });
     return addresses.length > 0 && addresses.every((a) => !isPrivateAddress(a.address));

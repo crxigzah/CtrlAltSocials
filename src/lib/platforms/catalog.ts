@@ -11,7 +11,9 @@ export type PlatformId =
   | "threads"
   | "tiktok"
   | "youtube"
-  | "reddit";
+  | "reddit"
+  | "mastodon"
+  | "linkedin";
 
 export type Platform = {
   id: PlatformId;
@@ -169,6 +171,31 @@ export const PLATFORMS: Platform[] = [
     bioMax: 200,
     media: { ...TEXT_ONLY, requiresText: true },
   },
+  {
+    id: "mastodon",
+    name: "Mastodon",
+    status: "live",
+    connect: "form",
+    maxLength: 500,
+    signupUrl: "https://joinmastodon.org/servers",
+    signupTip: "Pick a server and sign up, then create an access token: Preferences → Development → New application, with the read, write:statuses and write:media scopes.",
+    handleMax: 30,
+    bioMax: 500,
+    threads: true,
+    media: { maxItems: 4, imageTypes: COMMON_IMAGES, videoTypes: MP4, maxImageBytes: 16 * MB, maxVideoBytes: MAX_UPLOAD_BYTES, mixed: false },
+  },
+  {
+    id: "linkedin",
+    name: "LinkedIn",
+    status: "live",
+    connect: "oauth",
+    maxLength: 3000,
+    signupUrl: "https://www.linkedin.com/signup",
+    signupTip: "Posts go to the personal profile you sign in with. Company pages need LinkedIn's partner programme, which isn't supported. Sign-ins last 60 days, then need reconnecting.",
+    handleMax: 100,
+    bioMax: 220,
+    media: { maxItems: 9, imageTypes: [...JPEG_PNG, "image/gif"], videoTypes: [], maxImageBytes: 8 * MB, maxVideoBytes: 0, mixed: false },
+  },
 ];
 
 export const LIVE_PLATFORMS = PLATFORMS.filter((p) => p.status === "live");
@@ -195,6 +222,9 @@ export function postLength(platform: Platform, text: string): number {
   switch (platform.id) {
     case "bluesky":
       return graphemes(text).length;
+    case "mastodon":
+      // Mastodon counts every link as 23 characters, like X, but no double-width characters.
+      return [...text.replace(URL_RE, "")].length + (text.match(URL_RE) ?? []).length * 23;
     case "x": {
       const links = text.match(URL_RE) ?? [];
       const rest = text.replace(URL_RE, "");

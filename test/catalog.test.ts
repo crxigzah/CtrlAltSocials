@@ -57,3 +57,13 @@ describe("threads", () => {
     expect(postProblems(p("discord"), "a".repeat(1500), [], ["b".repeat(600)])[0]).toMatch(/joined/);
   });
 });
+
+describe("mastodon and linkedin", () => {
+  it("counts Mastodon links as 23 characters", () => {
+    expect(postLength(p("mastodon"), "Read https://5kable.com/guides/a-long-path")).toBe(5 + 23);
+  });
+  it("threads on Mastodon but joins on LinkedIn", () => {
+    expect(threadTexts(p("mastodon"), "a", ["b"])).toEqual(["a", "b"]);
+    expect(threadTexts(p("linkedin"), "a", ["b"])).toEqual(["a\n\nb"]);
+  });
+});

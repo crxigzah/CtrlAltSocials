@@ -4,6 +4,8 @@ import { bluesky } from "./bluesky";
 import { discord } from "./discord";
 import { facebook } from "./facebook";
 import { instagram } from "./instagram";
+import { linkedin } from "./linkedin";
+import { mastodon } from "./mastodon";
 import { reddit } from "./reddit";
 import { PlatformError, type Adapter, type OAuthAdapter } from "./shared";
 import { threads } from "./threads";
@@ -22,6 +24,8 @@ const ADAPTERS: Partial<Record<PlatformId, Adapter<never>>> = {
   youtube: youtube as Adapter<never>,
   tiktok: tiktok as Adapter<never>,
   reddit: reddit as Adapter<never>,
+  mastodon: mastodon as Adapter<never>,
+  linkedin: linkedin as Adapter<never>,
   x: x as Adapter<never>,
 };
 

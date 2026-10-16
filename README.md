@@ -8,7 +8,7 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 
 - **Projects (workspaces):** each keeps its own accounts. A post can only target accounts in its own project; the database enforces this, not just the UI.
 - **Brand kit + setup checklist:** handle, bio, website and sign-up email per project, with a checklist of every platform's sign-up page, copy buttons, and warnings when the handle or bio is too long for a platform. You do the sign-ups yourself.
-- **Posting:** Bluesky (app password), Discord (channel webhook), and Threads, X, Instagram, Facebook Pages, YouTube, TikTok and Reddit (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
+- **Posting:** Bluesky (app password), Mastodon (access token), Discord (channel webhook), and Threads, X, Instagram, Facebook Pages, YouTube, TikTok, Reddit and LinkedIn (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
 - **Images and video:** attach up to 20 files with alt text and drag-free reordering. The composer checks each platform's rules (count, file type, size, mixing images and video) before you can post. Files upload straight to a private Supabase Storage bucket and platforms get short-lived signed links.
 - **Per-account wording:** give X a shorter version or Instagram extra hashtags without writing separate posts.
 - **Posting slots and queue:** set regular times per project (e.g. weekdays 12:00 and 18:00, in the project's timezone) and "Add to queue" drops a post into the next free one.
@@ -111,6 +111,16 @@ The first line of the post becomes the video title and the whole text the descri
 3. Copy the client key and secret into `TIKTOK_CLIENT_KEY` and `TIKTOK_CLIENT_SECRET`.
 
 Until TikTok reviews the app, it only accepts private posts. CtrlAltSocials posts them as private and flags it in the history; submit the app for review to post publicly.
+
+**Mastodon** (no developer app needed)
+On your Mastodon server: Preferences → Development → New application, tick `read`, `write:statuses` and `write:media`, save, and copy "Your access token". On the Accounts tab, enter the server (e.g. `mastodon.social`) and the token.
+
+**LinkedIn** (personal profile)
+1. [linkedin.com/developers](https://www.linkedin.com/developers/apps) → create an app (it needs a LinkedIn Page to attach to; any page you admin works).
+2. Products: add **Sign In with LinkedIn using OpenID Connect** and **Share on LinkedIn**.
+3. Auth → redirect URL `<APP_URL>/api/oauth/linkedin/callback`; copy the client ID and secret into `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET`.
+
+Posts go to the profile that signs in (company pages need LinkedIn's partner programme). Sign-ins last 60 days with no automatic refresh, so reconnect every couple of months. The API version defaults to two months ago; set `LINKEDIN_VERSION` (YYYYMM) to pin one if LinkedIn complains.
 
 **Reddit**
 1. [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps) → create app → type **web app**, redirect URI `<APP_URL>/api/oauth/reddit/callback`.

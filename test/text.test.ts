@@ -72,3 +72,20 @@ describe("credential encryption", () => {
     expect(() => decryptJson(sealed.slice(0, -4) + "AAAA")).toThrow();
   });
 });
+
+import { linkedInCommentary } from "@/lib/platforms/adapters/linkedin";
+describe("linkedInCommentary", () => {
+  it("escapes LinkedIn's reserved characters but keeps hashtags as hashtags", () => {
+    expect(linkedInCommentary("New guide (Andorra) for @fans! #GeoGuessr #5k_tips")).toBe(
+      "New guide \\(Andorra\\) for \\@fans! {hashtag|\\#|GeoGuessr} {hashtag|\\#|5k_tips}",
+    );
+  });
+  it("leaves plain text and links alone", () => {
+    expect(linkedInCommentary("See https://5kable.com/guides")).toBe("See https://5kable.com/guides");
+  });
+});
+describe("linkedInCommentary links", () => {
+  it("doesn't escape characters inside links", () => {
+    expect(linkedInCommentary("Map: https://5kable.com/maps/driving_side_(2026) (new)")).toBe("Map: https://5kable.com/maps/driving_side_(2026) \\(new\\)");
+  });
+});

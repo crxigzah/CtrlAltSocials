@@ -110,6 +110,19 @@ export default async function AccountsPage({
                     </div>
                   </>
                 )}
+                {p.id === "mastodon" && (
+                  <>
+                    <div>
+                      <label className="field-label">Server</label>
+                      <input name="instance" required placeholder="mastodon.social" className="input" autoComplete="off" />
+                    </div>
+                    <div>
+                      <label className="field-label">Access token</label>
+                      <input name="access_token" required className="input font-mono" autoComplete="off" />
+                      <p className="mt-1 text-xs text-subtle">Mastodon → Preferences → Development → New application (scopes: read, write:statuses, write:media) → Your access token.</p>
+                    </div>
+                  </>
+                )}
                 {p.id === "discord" && (
                   <div>
                     <label className="field-label">Webhook URL</label>
