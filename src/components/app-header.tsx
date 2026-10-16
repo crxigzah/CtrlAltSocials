@@ -7,6 +7,7 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
       <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3">
         <Link href="/" aria-label="All projects"><Logo /></Link>
         <div className="flex-1">{children}</div>
+        <Link href="/status" className="text-sm text-muted hover:text-fg">Status</Link>
         <form action="/auth/signout" method="post">
           <button className="text-sm text-muted hover:text-fg">Sign out</button>
         </form>

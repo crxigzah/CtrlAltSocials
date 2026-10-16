@@ -5,6 +5,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { createClient } from "@/lib/supabase/server";
 import type { Account, Workspace } from "@/lib/types";
 import { requireUser } from "@/lib/workspace";
+import { runHealthChecks } from "@/lib/health";
 import { createWorkspace } from "./actions";
 import { LocalTime } from "@/components/local-time";
 
@@ -22,6 +23,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
     .order("created_at")
     .returns<Row[]>();
   const workspaces = data ?? [];
+  const broken = (await runHealthChecks()).filter((c) => c.state === "fail").length;
   const { data: upcoming } = await supabase
     .from("posts")
     .select("id, body, scheduled_at, workspace:workspaces(slug, name, color)")
@@ -40,6 +42,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         </div>
 
         {error && <p className="notice-error">{error}</p>}
+        {broken > 0 && (
+          <p className="notice-error">
+            Setup isn&apos;t finished: {broken} check{broken === 1 ? "" : "s"} failing. <Link href="/status" className="underline">See Status</Link>
+          </p>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {workspaces.map((w) => (

@@ -26,6 +26,10 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 
 Every platform on the setup checklist can now be posted to. Each needs a developer app registered with the platform.
 
+## Checking a deployment
+
+Open **Status** (top right) once it's deployed. It checks every environment variable, that all database migrations are applied, the storage bucket, that the scheduler has run in the last few minutes, and which platforms are configured, and says what to do about anything that isn't right. The home page shows a warning while anything critical is failing.
+
 ## Local development
 
 With Docker running, `npx supabase start` brings up Postgres, Auth and Storage locally and applies every migration. Point `.env.local` at the URL and keys it prints, then `npm run dev`.
