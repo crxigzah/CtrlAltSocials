@@ -59,9 +59,11 @@ export function Composer({ slug, workspaceId, accounts, action, draft }: Props) 
     () => new Set(draft ? draft.accountIds.filter((id) => accounts.some((a) => a.id === id)) : accounts.map((a) => a.id)),
   );
   const [when, setWhen] = useState<"now" | "later">(editing ? "later" : "now");
-  const [localTime, setLocalTime] = useState(() =>
-    localInputValue(draft?.scheduledAt && editing ? new Date(draft.scheduledAt) : new Date(Date.now() + 60 * 60 * 1000)),
-  );
+  // Filled in once in the browser: the server doesn't know the viewer's timezone.
+  const [localTime, setLocalTime] = useState("");
+  useEffect(() => {
+    setLocalTime(localInputValue(draft?.scheduledAt && editing ? new Date(draft.scheduledAt) : new Date(Date.now() + 60 * 60 * 1000)));
+  }, [draft?.scheduledAt, editing]);
   const [attachments, setAttachments] = useState<Attachment[]>(() =>
     (draft?.media ?? []).map((m) => ({ key: m.path, mime: m.mime, size: m.size, preview: m.preview, alt: m.alt ?? "", path: m.path, error: null })),
   );

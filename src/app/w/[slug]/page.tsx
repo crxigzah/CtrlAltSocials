@@ -6,7 +6,7 @@ import type { Account, Post, PostTarget } from "@/lib/types";
 import { getWorkspace } from "@/lib/workspace";
 import { cancelPost, createPost, retryFailed } from "./actions";
 import { Composer, type Draft } from "./composer";
-import { LocalTime } from "./local-time";
+import { LocalTime } from "@/components/local-time";
 
 export const metadata = { title: "Compose" };
 

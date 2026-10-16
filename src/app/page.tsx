@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Account, Workspace } from "@/lib/types";
 import { requireUser } from "@/lib/workspace";
 import { createWorkspace } from "./actions";
+import { LocalTime } from "@/components/local-time";
 
 export const metadata = { title: "Projects" };
 
@@ -21,6 +22,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
     .order("created_at")
     .returns<Row[]>();
   const workspaces = data ?? [];
+  const { data: upcoming } = await supabase
+    .from("posts")
+    .select("id, body, scheduled_at, workspace:workspaces(slug, name, color)")
+    .eq("status", "scheduled")
+    .order("scheduled_at")
+    .limit(8)
+    .returns<{ id: string; body: string; scheduled_at: string; workspace: Pick<Workspace, "slug" | "name" | "color"> }[]>();
 
   return (
     <>
@@ -64,6 +72,24 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
             </div>
           </form>
         </div>
+
+        {(upcoming ?? []).length > 0 && (
+          <section className="space-y-3">
+            <h2 className="font-semibold">Coming up</h2>
+            <ul className="card divide-y divide-line p-0">
+              {upcoming!.map((p) => (
+                <li key={p.id}>
+                  <Link href={`/w/${p.workspace.slug}?edit=${p.id}`} className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-raised">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.workspace.color }} />
+                    <span className="w-24 shrink-0 text-xs text-muted">{p.workspace.name}</span>
+                    <span className="min-w-0 flex-1 truncate">{p.body || "(attachments only)"}</span>
+                    <span className="shrink-0 text-xs text-subtle"><LocalTime iso={p.scheduled_at} /></span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </main>
     </>
   );

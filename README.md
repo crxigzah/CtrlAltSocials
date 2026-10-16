@@ -11,6 +11,7 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Posting:** Bluesky (app password), Discord (channel webhook), and Threads, X, Instagram and Facebook Pages (sign in with the platform), now or scheduled. Per-platform character counters, per-account results with links to the live posts.
 - **Images and video:** attach up to 20 files with alt text and drag-free reordering. The composer checks each platform's rules (count, file type, size, mixing images and video) before you can post. Files upload straight to a private Supabase Storage bucket and platforms get short-lived signed links.
 - **Per-account wording:** give X a shorter version or Instagram extra hashtags without writing separate posts.
+- **Calendar:** a month view per project, plus a "Coming up" list across every project on the home page.
 - **Edit and post again:** change a scheduled post right up until it goes out, or copy any earlier post (text, attachments and per-account wording) into the composer.
 - **Retry failed:** resend to just the accounts a post failed on; the ones that worked aren't posted to twice.
 - **Credentials** are encrypted with AES-256-GCM before they reach the database.

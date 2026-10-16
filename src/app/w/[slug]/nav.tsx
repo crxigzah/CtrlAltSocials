@@ -8,6 +8,7 @@ export function WorkspaceNav({ slug }: { slug: string }) {
   const base = `/w/${slug}`;
   const tabs = [
     { href: base, label: "Compose" },
+    { href: `${base}/calendar`, label: "Calendar" },
     { href: `${base}/accounts`, label: "Accounts" },
     { href: `${base}/setup`, label: "Setup checklist" },
     { href: `${base}/settings`, label: "Brand kit" },
