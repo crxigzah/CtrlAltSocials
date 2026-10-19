@@ -55,3 +55,21 @@ describe("planImport", () => {
     expect(planImport(parseCsv("2026-10-20,Hi"), opts).error).toMatch(/column headings/);
   });
 });
+
+import { csvCell, toCsv } from "@/lib/csv";
+describe("csv export", () => {
+  it("quotes cells that need it and defuses formulas", () => {
+    expect(csvCell('Say "hi", world')).toBe('"Say ""hi"", world"');
+    expect(csvCell("=HYPERLINK(\"x\")")).toBe(`"'=HYPERLINK(""x"")"`);
+    expect(csvCell("@SUM(A1:A9)")).toBe("'@SUM(A1:A9)");
+    expect(csvCell("+cmd|' /C calc'!A0")).toBe("'+cmd|' /C calc'!A0");
+    expect(csvCell("@5kable.bsky.social")).toBe("@5kable.bsky.social");
+    expect(csvCell("-5 tips")).toBe("-5 tips");
+    expect(csvCell(null)).toBe("");
+  });
+  it("round-trips through the importer's parser", () => {
+    const out = toCsv([["text"], ["Line one\nLine, two 🇦🇩"]]);
+    expect(out.startsWith("﻿")).toBe(true);
+    expect(parseCsv(out)).toEqual([["text"], ["Line one\nLine, two 🇦🇩"]]);
+  });
+});

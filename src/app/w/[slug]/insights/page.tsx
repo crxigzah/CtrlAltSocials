@@ -72,7 +72,12 @@ export default async function InsightsPage({ params }: { params: Promise<{ slug:
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold">Last 30 days</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold">Last 30 days</h1>
+          <a href={`/w/${slug}/export`} className="btn-ghost ml-auto px-3 py-1 text-xs" download>
+            Export all posts (CSV)
+          </a>
+        </div>
         <p className="text-sm text-muted">
           {postCount} post{postCount === 1 ? "" : "s"} sent across {byPlatform.size} platform{byPlatform.size === 1 ? "" : "s"}. Numbers update
           hourly for a day after posting, then every six hours for two weeks.

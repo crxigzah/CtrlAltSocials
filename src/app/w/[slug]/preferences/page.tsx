@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireOwner } from "@/lib/workspace";
 import { CopyButton } from "../setup/copy-button";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { setRequireApproval } from "./actions";
+import { setRequireApproval, setWeeklySummary } from "./actions";
 import { addSlots, addSnippet, createInvite, removeMember, removeSlot, removeSnippet, revokeInvite, setAlertWebhook, setLinkTracking, setTimezone } from "./actions";
 
 export const metadata = { title: "Settings" };
@@ -164,6 +164,15 @@ export default async function PreferencesPage({
           </p>
         </div>
         <p className="text-sm">{ws.alert_webhook ? "✅ Alerts are on." : "Alerts are off."}</p>
+        {ws.alert_webhook && (
+          <form action={setWeeklySummary.bind(null, slug)} className="flex items-center gap-3 text-sm">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" name="weekly_summary" defaultChecked={ws.weekly_summary} className="accent-[var(--color-accent)]" />
+              Also send a weekly summary on Monday mornings
+            </label>
+            <SubmitButton className="btn-ghost px-3 py-1 text-xs" pendingText="Saving…">Save</SubmitButton>
+          </form>
+        )}
         <form action={setAlertWebhook.bind(null, slug)} className="flex flex-wrap gap-2">
           <input name="webhook_url" type="url" placeholder="https://discord.com/api/webhooks/…" className="input min-w-0 flex-1 font-mono" autoComplete="off" />
           <SubmitButton className="btn-ghost" pendingText="Testing…">{ws.alert_webhook ? "Replace" : "Turn on"}</SubmitButton>

@@ -15,6 +15,7 @@ export type Workspace = {
   alert_webhook: string | null;
   utm_enabled: boolean;
   require_approval: boolean;
+  weekly_summary: boolean;
   utm_campaign: string | null;
   created_at: string;
 };

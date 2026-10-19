@@ -15,6 +15,8 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Previews:** see roughly how the post will look on each ticked account before sending: threads as connected replies, Instagram's caption cut-off, Reddit and YouTube title lines, Discord's message.
 - **Media library:** every image and video you've attached is kept per project; "From library" in the composer reuses one without uploading it again.
 - **Drafts and snippets:** save half-finished posts, and keep hashtag sets or sign-offs to insert with one click.
+- **Weekly summary:** projects with an alert channel get a Monday-morning recap there: posts sent, failures, the best post, and what's scheduled for the week ahead (switch off in Settings).
+- **Export:** download every post as a CSV (one row per account, with result, link and numbers) from Insights.
 - **Failure alerts:** a Discord webhook per project gets a message, with the reason, whenever a scheduled post fails or only partly goes out.
 - **Best times to post:** once there are enough posts with numbers, Insights ranks the weekday-and-hour slots that do best, with one click to add one as a posting slot.
 - **Insights:** likes, comments, shares and views pulled back from each platform (hourly for a post's first day, then every six hours for two weeks), with 30-day totals against the previous 30 days, a per-platform breakdown and top posts. Discord doesn't report numbers.

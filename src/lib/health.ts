@@ -23,6 +23,7 @@ const SCHEMA_PROBES: [string, string, string][] = [
   ["20261019000000_heartbeat_recurring", "posts", "next_post_id"],
   ["20261020000000_members", "workspace_members", "role"],
   ["20261021000000_approvals", "posts", "review_note"],
+  ["20261022000000_weekly_summary", "workspaces", "weekly_summary"],
 ];
 
 function ago(ms: number) {

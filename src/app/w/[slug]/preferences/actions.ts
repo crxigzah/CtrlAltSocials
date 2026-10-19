@@ -106,6 +106,14 @@ export async function removeSnippet(slug: string, snippetId: string) {
   revalidatePath(`/w/${slug}`, "layout");
 }
 
+export async function setWeeklySummary(slug: string, formData: FormData) {
+  const ws = await requireOwner(slug);
+  const on = formData.get("weekly_summary") === "on";
+  const supabase = await createClient();
+  await supabase.from("workspaces").update({ weekly_summary: on }).eq("id", ws.id);
+  back(slug, { saved: on ? "Weekly summary on." : "Weekly summary off." });
+}
+
 export async function setRequireApproval(slug: string, formData: FormData) {
   const ws = await requireOwner(slug);
   const on = formData.get("require_approval") === "on";

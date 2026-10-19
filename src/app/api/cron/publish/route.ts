@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendFailureAlert } from "@/lib/alerts";
 import { refreshMetrics } from "@/lib/metrics";
+import { sendWeeklySummaries } from "@/lib/weekly-summary";
 import { publishPost } from "@/lib/publisher";
 import type { Post } from "@/lib/types";
 
@@ -47,11 +48,12 @@ async function run(request: NextRequest) {
   // Spare time goes on updating recent posts' likes, comments and views.
   const remaining = TIME_BUDGET_MS - (Date.now() - started);
   const metricsUpdated = remaining > 3000 ? await refreshMetrics(supabase, remaining) : 0;
+  const summaries = await sendWeeklySummaries(supabase);
   // Heartbeat for the status page, so a scheduler that has stopped calling in is noticed.
   await supabase
     .from("system_heartbeat")
-    .upsert({ name: "publisher", ran_at: new Date().toISOString(), detail: { published: Object.keys(results).length, metricsUpdated } });
-  return NextResponse.json({ published: results, metricsUpdated });
+    .upsert({ name: "publisher", ran_at: new Date().toISOString(), detail: { published: Object.keys(results).length, metricsUpdated, summaries } });
+  return NextResponse.json({ published: results, metricsUpdated, summaries });
 }
 
 export const GET = run;

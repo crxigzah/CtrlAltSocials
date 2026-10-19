@@ -44,3 +44,19 @@ export function parseCsv(input: string): string[][] {
   }
   return rows.filter((r) => r.some((c) => c.trim() !== ""));
 }
+
+/**
+ * One CSV cell. Quotes when needed, and defuses spreadsheet formulas: text starting
+ * with "=" always, and "+", "-" or "@" when it contains what a formula needs to do
+ * harm ("(", "!" or "="). Plain handles like "@5kable" and "-5 tips" stay as written.
+ */
+export function csvCell(value: unknown): string {
+  let text = value === null || value === undefined ? "" : String(value);
+  if (/^[=\t\r]/.test(text) || (/^[+\-@]/.test(text) && /[(!=]/.test(text))) text = `'${text}`;
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+export function toCsv(rows: unknown[][]): string {
+  // The byte-order mark makes Excel read UTF-8 (emoji, accents) correctly.
+  return "﻿" + rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+}
