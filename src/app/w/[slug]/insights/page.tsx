@@ -1,4 +1,7 @@
 import { MetricLine } from "@/components/metric-line";
+import { SubmitButton } from "@/components/submit-button";
+import { bestTimes, MIN_POSTS_FOR_BEST_TIMES } from "@/lib/best-times";
+import { addSlots } from "../preferences/actions";
 import { PlatformIcon } from "@/components/platform-icon";
 import { compact, full } from "@/lib/format-number";
 import { getPlatform, type PlatformId } from "@/lib/platforms/catalog";
@@ -42,6 +45,18 @@ export default async function InsightsPage({ params }: { params: Promise<{ slug:
   const previous = rows.filter((r) => new Date(r.sent_at).getTime() < now - 30 * DAY);
   const measured = current.filter((r) => r.metrics);
   const postCount = new Set(current.map((r) => r.post.id)).size;
+
+  // Per post, across all its accounts, over both 30-day windows for more history.
+  const perPost = new Map<string, { sentAt: Date; interactions: number }>();
+  for (const r of rows.filter((x) => x.metrics)) {
+    const prev = perPost.get(r.post.id);
+    const sentAt = new Date(r.sent_at);
+    perPost.set(r.post.id, {
+      sentAt: prev && prev.sentAt < sentAt ? prev.sentAt : sentAt,
+      interactions: (prev?.interactions ?? 0) + engagement(r.metrics),
+    });
+  }
+  const best = bestTimes([...perPost.values()], ws.timezone);
 
   const byPlatform = new Map<PlatformId, Row[]>();
   for (const r of current) if (r.account) byPlatform.set(r.account.platform, [...(byPlatform.get(r.account.platform) ?? []), r]);
@@ -131,6 +146,39 @@ export default async function InsightsPage({ params }: { params: Promise<{ slug:
               </table>
             </div>
             <p className="text-xs text-subtle">– means the platform doesn&apos;t report that number. Reddit&apos;s &ldquo;likes&rdquo; are its score (upvotes minus downvotes).</p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="font-semibold">Best times to post</h2>
+            {best.length === 0 ? (
+              <p className="text-sm text-muted">
+                Needs at least {MIN_POSTS_FOR_BEST_TIMES} posts with numbers ({perPost.size} so far). Until then, post at a mix of times so there&apos;s something to compare.
+              </p>
+            ) : (
+              <>
+                <ol className="card divide-y divide-line p-0">
+                  {best.map((b, i) => (
+                    <li key={b.label} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+                      <span className="w-5 text-subtle">{i + 1}</span>
+                      <span className="w-28 font-medium">{b.label}</span>
+                      <span className="flex-1 text-muted">
+                        {b.average.toFixed(b.average < 10 ? 1 : 0)} interactions per post on average · {b.posts} post{b.posts === 1 ? "" : "s"}
+                      </span>
+                      {ws.role === "owner" && (
+                        <form action={addSlots.bind(null, slug)}>
+                          <input type="hidden" name="weekday" value={b.weekday} />
+                          <input type="hidden" name="time" value={`${String(b.hour).padStart(2, "0")}:00`} />
+                          <SubmitButton className="btn-ghost px-2.5 py-1 text-xs" pendingText="Adding…">Add as posting slot</SubmitButton>
+                        </form>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+                <p className="text-xs text-subtle">
+                  From the last 60 days, in {ws.timezone}. Slots with only one post are a hint rather than a pattern.
+                </p>
+              </>
+            )}
           </section>
 
           {top.length > 0 && (

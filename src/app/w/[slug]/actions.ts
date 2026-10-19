@@ -438,3 +438,23 @@ export async function rejectPost(slug: string, postId: string, formData: FormDat
   revalidatePath(`/w/${slug}`);
   back(`/w/${slug}`, { scheduled: "returned" });
 }
+
+/** Calendar drag and drop: moves a scheduled post to a new time. Returns an error message, if any. */
+export async function reschedulePost(slug: string, postId: string, iso: string): Promise<{ error?: string }> {
+  const ws = await getWorkspace(slug);
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return { error: "That isn't a valid time." };
+  if (at.getTime() < Date.now() + 60_000) return { error: "Posts can only be moved into the future." };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("posts")
+    .update({ scheduled_at: at.toISOString() })
+    .eq("id", postId)
+    .eq("workspace_id", ws.id)
+    .in("status", ["scheduled", "pending_approval"])
+    .select("id");
+  if (error?.message.includes("approval_required")) return { error: "Approved posts can only be moved by the owner while approval is on." };
+  if (error || !data?.length) return { error: "That post can't be moved (it may already have gone out)." };
+  revalidatePath(`/w/${slug}`, "layout");
+  return {};
+}

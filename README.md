@@ -16,6 +16,7 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Media library:** every image and video you've attached is kept per project; "From library" in the composer reuses one without uploading it again.
 - **Drafts and snippets:** save half-finished posts, and keep hashtag sets or sign-offs to insert with one click.
 - **Failure alerts:** a Discord webhook per project gets a message, with the reason, whenever a scheduled post fails or only partly goes out.
+- **Best times to post:** once there are enough posts with numbers, Insights ranks the weekday-and-hour slots that do best, with one click to add one as a posting slot.
 - **Insights:** likes, comments, shares and views pulled back from each platform (hourly for a post's first day, then every six hours for two weeks), with 30-day totals against the previous 30 days, a per-platform breakdown and top posts. Discord doesn't report numbers.
 - **Repeating posts:** every week, every 2 weeks or every month. Once a post goes out, the next one is scheduled with the same text, accounts and attachments, at the same local time (clocks changing included). Cancel the next one to stop the series.
 - **Threads:** add parts to a post and X, Bluesky and Threads get them as a reply chain; other platforms get them joined into one post. If a later part fails, the post isn't retried (the first part is already live) and the history says how far it got.
@@ -24,7 +25,7 @@ Built with Next.js (App Router) and Supabase (Postgres, Auth). Database changes 
 - **Spreadsheet import:** plan posts in Excel or Google Sheets (`when`, `text`, optional `accounts` and `repeat` columns), paste or upload the CSV, check every row against the platforms' rules, then import the good ones in one go. `queue` fills the next free posting slots; a blank `when` makes a draft.
 - **Collaborators:** invite people to a project with a single-use link (Settings → Members). Editors can write, schedule and import posts and see insights; only the owner connects accounts, edits the brand kit and changes settings. The database enforces this, not just the UI. If `ALLOWED_EMAILS` is set, add their email to it.
 - **Approvals:** optionally, editors' posts wait for the owner (Settings → Members). The owner gets a ping in the alert channel, then approves or sends the post back as a draft with a note. Enforced in the database, so an editor can't schedule around it. Posts show who wrote and approved them.
-- **Calendar:** a month view per project, plus a "Coming up" list across every project on the home page.
+- **Calendar:** drag a scheduled post to another day to move it (same time of day); a month view per project, plus a "Coming up" list across every project on the home page.
 - **Edit and post again:** change a scheduled post right up until it goes out, or copy any earlier post (text, attachments and per-account wording) into the composer.
 - **Tailor with AI (optional):** with `ANTHROPIC_API_KEY` set, one click has Claude write a version of the post for each ticked account (shorter for X, "link in bio" and hashtags for Instagram, a title line for Reddit and YouTube) into the per-account boxes, for you to check before posting.
 - **Retry failed:** resend to just the accounts a post failed on; the ones that worked aren't posted to twice.
